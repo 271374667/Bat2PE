@@ -6,8 +6,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
-import sysconfig
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -82,15 +80,6 @@ def build_all(layout: BuildLayout) -> None:
     if layout.profile == "release":
         command.append("--release")
     run(command)
-
-
-def extension_suffix() -> str:
-    suffix = sysconfig.get_config_var("EXT_SUFFIX")
-    if not suffix:
-        raise SystemExit("failed to resolve Python extension suffix for the current interpreter")
-    return suffix
-
-
 def sync_artifacts(layout: BuildLayout) -> dict[str, str]:
     output_dir = layout.output_dir
     PYTHON_BIN_DIR.mkdir(parents=True, exist_ok=True)
@@ -109,7 +98,7 @@ def sync_artifacts(layout: BuildLayout) -> dict[str, str]:
     for old_pyd in PYTHON_PACKAGE_DIR.glob("_native*.pyd"):
         old_pyd.unlink()
 
-    python_native = PYTHON_PACKAGE_DIR / f"_native{extension_suffix()}"
+    python_native = PYTHON_PACKAGE_DIR / "_native.pyd"
     shutil.copy2(native_dll, python_native)
     shutil.copy2(stub_console, PYTHON_BIN_DIR / stub_console.name)
     shutil.copy2(stub_windows, PYTHON_BIN_DIR / stub_windows.name)

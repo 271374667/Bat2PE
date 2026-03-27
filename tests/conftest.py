@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib
-import importlib.machinery
 import os
 import shutil
 import subprocess
@@ -52,13 +51,6 @@ def _run(
 
 def _decode_output(payload: bytes) -> str:
     return payload.decode("utf-8", errors="replace")
-
-
-def _extension_suffix() -> str:
-    for suffix in importlib.machinery.EXTENSION_SUFFIXES:
-        if suffix.endswith(".pyd"):
-            return suffix
-    return importlib.machinery.EXTENSION_SUFFIXES[0]
 
 
 def _reset_bat2pe_modules() -> None:
@@ -135,7 +127,7 @@ def bat2pe_module(
         if source.is_file():
             shutil.copy2(source, package_dir / source.name)
 
-    native_target = package_dir / f"_native{_extension_suffix()}"
+    native_target = package_dir / "_native.pyd"
     shutil.copy2(build_artifacts.native_library, native_target)
 
     sys.path.insert(0, str(package_root))
