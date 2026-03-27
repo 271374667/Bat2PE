@@ -1,0 +1,15 @@
+[package]
+name = "bat2pe-py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+bat2pe-core = { path = "../bat2pe-core" }
+pyo3.workspace = true
+serde.workspace = true
+serde_json.workspace = true

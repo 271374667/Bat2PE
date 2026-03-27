@@ -1,0 +1,9 @@
+[package]
+name = "bat2pe-stub-windows"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bat2pe-core = { path = "../bat2pe-core" }

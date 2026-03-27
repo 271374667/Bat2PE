@@ -1,0 +1,51 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "bat2pe"
+version = "0.1.0"
+description = "Windows Bat/Cmd to Exe converter with Rust CLI and Python API."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MPL-2.0" }
+authors = [{ name = "Bat2PE Contributors" }]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Rust",
+]
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "maturin>=1.7,<2.0",
+  "mypy>=1.10",
+  "pytest>=8.0",
+  "ruff>=0.11",
+]
+
+[tool.maturin]
+manifest-path = "crates/bat2pe-py/Cargo.toml"
+python-source = "python"
+module-name = "bat2pe._native"
+bindings = "pyo3"
+
+[tool.pytest.ini_options]
+addopts = "-p no:cacheprovider"
+pythonpath = ["python"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["bat2pe"]
