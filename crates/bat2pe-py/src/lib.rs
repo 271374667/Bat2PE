@@ -120,7 +120,7 @@ fn resolve_stub_paths(
         .ok_or_else(|| {
             Bat2PeError::new(
                 ERR_RESOURCE_NOT_FOUND,
-                "missing console stub path; pass stub_console or set BAT2PE_STUB_CONSOLE",
+                "missing console stub path; build bat2pe-stub-console.exe with `cargo build -p bat2pe-stub-console -p bat2pe-stub-windows`, or pass stub_console / BAT2PE_STUB_CONSOLE",
             )
         })?;
     let windows = stub_windows
@@ -128,7 +128,7 @@ fn resolve_stub_paths(
         .ok_or_else(|| {
             Bat2PeError::new(
                 ERR_RESOURCE_NOT_FOUND,
-                "missing hidden-window stub path; pass stub_windows or set BAT2PE_STUB_WINDOWS",
+                "missing hidden-window stub path; build bat2pe-stub-windows.exe with `cargo build -p bat2pe-stub-console -p bat2pe-stub-windows`, or pass stub_windows / BAT2PE_STUB_WINDOWS",
             )
         })?;
 
