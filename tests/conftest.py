@@ -3,9 +3,13 @@ from __future__ import annotations
 import importlib
 import os
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
+import time
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,6 +18,8 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON_PACKAGE_ROOT = REPO_ROOT / "python" / "bat2pe"
+TEST_RUNTIME_PREFIX = "bat2pe-test-runtime-"
+LEGACY_REPO_RUNTIME_PREFIX = f".{TEST_RUNTIME_PREFIX}"
 
 
 @dataclass(frozen=True)
@@ -59,11 +65,81 @@ def _reset_bat2pe_modules() -> None:
             sys.modules.pop(name, None)
 
 
+def _remove_readonly(func, path: str, _exc_info: object) -> None:
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def _cleanup_tree(path: Path) -> None:
+    if not path.exists():
+        return
+    last_error: OSError | None = None
+    for _ in range(50):
+        try:
+            shutil.rmtree(path, onerror=_remove_readonly)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as error:
+            last_error = error
+            time.sleep(0.2)
+
+    if last_error is not None:
+        raise last_error
+
+
+def _schedule_cleanup_after_exit(path: Path) -> None:
+    cleanup_script = (
+        "import pathlib\n"
+        "import shutil\n"
+        "import sys\n"
+        "import time\n"
+        "target = pathlib.Path(sys.argv[1])\n"
+        "for _ in range(150):\n"
+        "    try:\n"
+        "        shutil.rmtree(target)\n"
+        "        break\n"
+        "    except FileNotFoundError:\n"
+        "        break\n"
+        "    except OSError:\n"
+        "        time.sleep(0.2)\n"
+    )
+    creationflags = 0
+    for flag_name in ("DETACHED_PROCESS", "CREATE_NEW_PROCESS_GROUP", "CREATE_NO_WINDOW"):
+        creationflags |= getattr(subprocess, flag_name, 0)
+
+    subprocess.Popen(
+        [sys.executable, "-c", cleanup_script, str(path)],
+        cwd=tempfile.gettempdir(),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+        creationflags=creationflags,
+    )
+
+
+def _cleanup_legacy_repo_runtime_dirs() -> None:
+    for candidate in REPO_ROOT.glob(f"{LEGACY_REPO_RUNTIME_PREFIX}*"):
+        if not candidate.is_dir():
+            continue
+        try:
+            _cleanup_tree(candidate)
+        except OSError:
+            _schedule_cleanup_after_exit(candidate)
+
+
 @pytest.fixture(scope="session")
-def session_temp_root() -> Path:
-    root = REPO_ROOT / f".bat2pe-test-runtime-{uuid.uuid4().hex}"
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+def session_temp_root() -> Iterator[Path]:
+    _cleanup_legacy_repo_runtime_dirs()
+    root = Path(tempfile.mkdtemp(prefix=TEST_RUNTIME_PREFIX))
+    try:
+        yield root
+    finally:
+        try:
+            _cleanup_tree(root)
+        except OSError:
+            _schedule_cleanup_after_exit(root)
 
 
 @pytest.fixture(scope="session")
