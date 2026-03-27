@@ -14,9 +14,9 @@ def test_cli_help_smoke(cli_runner) -> None:
 
 
 def test_cli_reports_usage_errors(cli_runner, test_dir: Path) -> None:
-    missing_out = cli_runner("build", test_dir / "missing.bat")
-    assert missing_out.returncode == 1
-    assert "missing --out" in missing_out.stderr
+    missing_input = cli_runner("build")
+    assert missing_input.returncode == 1
+    assert "missing input script" in missing_input.stderr
 
     inspect_missing = cli_runner("inspect")
     assert inspect_missing.returncode == 1
@@ -29,6 +29,10 @@ def test_cli_reports_usage_errors(cli_runner, test_dir: Path) -> None:
     verify_positional = cli_runner("verify", "positional")
     assert verify_positional.returncode == 1
     assert "verify only accepts named options" in verify_positional.stderr
+
+    missing_out_value = cli_runner("build", test_dir / "missing.bat", "--out")
+    assert missing_out_value.returncode == 1
+    assert "missing value for --out" in missing_out_value.stderr
 
 
 def test_cli_build_and_inspect_returns_full_metadata(
@@ -117,6 +121,28 @@ def test_cli_supports_overwrite_and_quiet_mode(cli_runner, test_dir: Path) -> No
     assert inspect_quiet.stdout == ""
 
 
+def test_cli_defaults_output_path_and_overwrites_existing_file(
+    cli_runner,
+    test_dir: Path,
+) -> None:
+    script = test_dir / "default_output.cmd"
+    script.write_bytes(b"@echo off\r\necho default path 1>&2\r\nexit /b 0\r\n")
+    default_output = test_dir / "default_output.exe"
+    default_output.write_text("stale exe placeholder", encoding="utf-8")
+
+    build = cli_runner("build", script)
+
+    assert build.returncode == 0, build.stderr
+    payload = json.loads(build.stdout)
+    assert Path(payload["output_exe"]) == default_output
+    assert default_output.exists()
+
+    inspect = cli_runner("inspect", default_output)
+    assert inspect.returncode == 0, inspect.stderr
+    inspect_payload = json.loads(inspect.stdout)
+    assert inspect_payload["source_script_name"] == "default_output.cmd"
+
+
 def test_cli_rejects_conflicting_verbosity_and_invalid_inputs(
     cli_runner,
     test_dir: Path,
@@ -132,6 +158,12 @@ def test_cli_rejects_conflicting_verbosity_and_invalid_inputs(
     bad_script = cli_runner("build", script, "--out", output)
     assert bad_script.returncode == 1
     assert "input must end with .bat or .cmd" in bad_script.stderr
+
+    empty_script = test_dir / "empty.bat"
+    empty_script.write_bytes(b"")
+    empty_result = cli_runner("build", empty_script, "--out", output)
+    assert empty_result.returncode == 1
+    assert "input script is empty" in empty_result.stderr
 
     real_script = test_dir / "real.bat"
     real_script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
@@ -151,6 +183,17 @@ def test_cli_rejects_conflicting_verbosity_and_invalid_inputs(
     )
     assert invalid_window.returncode == 1
     assert "unsupported window mode" in invalid_window.stderr
+
+    invalid_version = cli_runner(
+        "build",
+        real_script,
+        "--out",
+        output,
+        "--file-version",
+        "1.2.3.4",
+    )
+    assert invalid_version.returncode == 1
+    assert "major.minor.patch" in invalid_version.stderr
 
     invalid_exe = test_dir / "invalid.exe"
     invalid_exe.write_text("plain text", encoding="utf-8")

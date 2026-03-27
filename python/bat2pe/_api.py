@@ -48,7 +48,7 @@ class Builder:
         self,
         *,
         input_script: Pathish,
-        output_exe: Pathish,
+        output_exe: Pathish | None = None,
         window: str = "visible",
         icon: Pathish | None = None,
         company: str | None = None,
@@ -62,7 +62,7 @@ class Builder:
         stub_windows: Pathish | None = None,
     ) -> None:
         self.input_script = Path(input_script)
-        self.output_exe = Path(output_exe)
+        self.output_exe = Path(output_exe) if output_exe is not None else None
         self.window = window
         self.icon = Path(icon) if icon is not None else None
         self.company = company
@@ -80,7 +80,7 @@ class Builder:
         try:
             payload = native.build(
                 _normalize_path(self.input_script),
-                _normalize_path(self.output_exe),
+                _normalize_path(self.output_exe) if self.output_exe is not None else None,
                 window=self.window,
                 icon=_normalize_path(self.icon) if self.icon is not None else None,
                 company=self.company,
@@ -150,7 +150,7 @@ class Verifier:
 def build(
     *,
     input_script: Pathish,
-    output_exe: Pathish,
+    output_exe: Pathish | None = None,
     window: str = "visible",
     icon: Pathish | None = None,
     company: str | None = None,

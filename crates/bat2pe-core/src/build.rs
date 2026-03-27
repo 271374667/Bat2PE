@@ -82,9 +82,25 @@ pub fn read_script_bytes(path: &Path) -> Result<(Vec<u8>, ScriptEncoding)> {
     Ok((bytes, encoding))
 }
 
+pub fn derive_output_exe_path(input_script: &Path) -> Result<std::path::PathBuf> {
+    let extension = normalized_script_extension(input_script)?;
+    if extension != ".bat" && extension != ".cmd" {
+        return Err(
+            Bat2PeError::new(ERR_UNSUPPORTED_INPUT, "input must be a .bat or .cmd file")
+                .with_path(input_script.to_path_buf()),
+        );
+    }
+
+    Ok(input_script.with_extension("exe"))
+}
+
 pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
     let (script_bytes, script_encoding) = read_script_bytes(&request.input_script)?;
     let source_extension = normalized_script_extension(&request.input_script)?;
+    let output_exe = request
+        .output_exe
+        .clone()
+        .unwrap_or(derive_output_exe_path(&request.input_script)?);
 
     let stub_path = request.stub_paths.for_window_mode(request.window_mode);
     if !stub_path.exists() {
@@ -95,12 +111,12 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
         .with_path(stub_path));
     }
 
-    if !request.overwrite && request.output_exe.exists() {
+    if !request.overwrite && output_exe.exists() {
         return Err(Bat2PeError::new(
             ERR_INVALID_INPUT,
             "output executable already exists and overwrite is disabled",
         )
-        .with_path(request.output_exe.clone()));
+        .with_path(output_exe.clone()));
     }
 
     let icon = request
@@ -109,8 +125,7 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
         .map(load_icon_info)
         .transpose()?;
 
-    fs::copy(&stub_path, &request.output_exe)
-        .map_err(|error| Bat2PeError::io(&request.output_exe, &error))?;
+    fs::copy(&stub_path, &output_exe).map_err(|error| Bat2PeError::io(&output_exe, &error))?;
 
     let metadata = EmbeddedMetadata {
         schema_version: OVERLAY_SCHEMA_VERSION,
@@ -133,16 +148,16 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
 
     let mut output = OpenOptions::new()
         .append(true)
-        .open(&request.output_exe)
-        .map_err(|error| Bat2PeError::io(&request.output_exe, &error))?;
+        .open(&output_exe)
+        .map_err(|error| Bat2PeError::io(&output_exe, &error))?;
     append_overlay(&mut output, &metadata, &script_bytes)?;
     output
         .flush()
-        .map_err(|error| Bat2PeError::io(&request.output_exe, &error))?;
+        .map_err(|error| Bat2PeError::io(&output_exe, &error))?;
 
-    let inspect = inspect_executable(&request.output_exe)?;
+    let inspect = inspect_executable(&output_exe)?;
     Ok(BuildResult {
-        output_exe: request.output_exe.clone(),
+        output_exe,
         stub_path,
         script_encoding,
         script_length: script_bytes.len() as u64,
@@ -220,5 +235,11 @@ mod tests {
         let bytes = [b'@', 0x00, b'e', 0x00, b'c', 0x00, b'h', 0x00, b'o', 0x00];
         let error = detect_script_encoding(&bytes).expect_err("unsupported encoding");
         assert_eq!(error.code, ERR_UNSUPPORTED_ENCODING);
+    }
+
+    #[test]
+    fn derives_default_output_path() {
+        let output = derive_output_exe_path(Path::new(r"G:\demo\run.cmd")).expect("output path");
+        assert_eq!(output, std::path::PathBuf::from(r"G:\demo\run.exe"));
     }
 }

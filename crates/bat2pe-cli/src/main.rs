@@ -131,7 +131,7 @@ fn run_build(args: Vec<OsString>) -> Result<i32> {
     let verbosity = resolve_verbosity(quiet, verbose)?;
     let request = BuildRequest {
         input_script: input_script.ok_or_else(|| usage_error("missing input script"))?,
-        output_exe: output_exe.ok_or_else(|| usage_error("missing --out"))?,
+        output_exe,
         window_mode,
         icon_path,
         version_info,
@@ -296,7 +296,7 @@ fn usage_error(message: impl Into<String>) -> Bat2PeError {
 fn print_usage() {
     println!(
         "\
-bat2pe build <input.bat|input.cmd> --out <output.exe> [options]
+bat2pe build <input.bat|input.cmd> [--out <output.exe>] [options]
 bat2pe inspect <output.exe> [--quiet|--verbose]
 bat2pe verify --script <input.bat|input.cmd> --exe <output.exe> [--cwd PATH] [--arg VALUE ...]
 

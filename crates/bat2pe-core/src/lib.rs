@@ -7,7 +7,8 @@ mod runtime;
 mod verify;
 
 pub use build::{
-    build_executable, detect_script_encoding, locate_stub_binaries, read_script_bytes,
+    build_executable, derive_output_exe_path, detect_script_encoding, locate_stub_binaries,
+    read_script_bytes,
 };
 pub use error::{
     Bat2PeError, ERR_CLI_USAGE, ERR_DIRECTORY_NOT_WRITABLE, ERR_INVALID_EXECUTABLE,

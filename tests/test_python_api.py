@@ -77,9 +77,9 @@ def test_top_level_import_surface_and_functional_api(
     icon = test_dir / "functional_api.ico"
     icon.write_bytes(fake_ico_bytes)
 
+    output.write_text("stale exe placeholder", encoding="utf-8")
     build_result = bat2pe_module.build(
         input_script=script,
-        output_exe=output,
         icon=icon,
         company="Acme",
         product="Functional API",
@@ -189,6 +189,42 @@ def test_python_api_raises_typed_errors(
 
     assert inspect_error.value.code == 104
     assert inspect_error.value.path is None
+
+    empty_script = test_dir / "empty.bat"
+    empty_script.write_bytes(b"")
+    with pytest.raises(bat2pe_module.BuildError) as empty_error:
+        bat2pe_module.Builder(
+            input_script=empty_script,
+            output_exe=test_dir / "empty.exe",
+        ).build()
+
+    assert empty_error.value.code == 100
+    assert empty_error.value.path == empty_script
+
+    real_script = test_dir / "real.bat"
+    real_script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
+    with pytest.raises(bat2pe_module.BuildError) as version_error:
+        bat2pe_module.build(
+            input_script=real_script,
+            output_exe=test_dir / "bad_version.exe",
+            file_version="1.2.3.4",
+        )
+
+    assert version_error.value.code == 100
+
+
+def test_python_builder_defaults_output_path(
+    bat2pe_module,
+    test_dir: Path,
+) -> None:
+    script = test_dir / "builder_default_output.bat"
+    script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
+    default_output = test_dir / "builder_default_output.exe"
+
+    result = bat2pe_module.Builder(input_script=script).build()
+
+    assert result.output_exe == default_output
+    assert default_output.exists()
 
 
 def test_python_api_reports_missing_stub_paths(

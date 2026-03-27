@@ -145,4 +145,42 @@ mod tests {
 
         std::fs::remove_file(path).expect("remove temp file");
     }
+
+    #[test]
+    fn rejects_missing_magic() {
+        let bytes = vec![0; FOOTER_LEN];
+        let error = read_overlay_from_bytes(&bytes).expect_err("missing magic");
+        assert_eq!(error.code, ERR_INVALID_EXECUTABLE);
+        assert!(error.message.contains("overlay"));
+    }
+
+    #[test]
+    fn rejects_footer_outside_file() {
+        let mut bytes = vec![0; FOOTER_LEN];
+        bytes[0..8].copy_from_slice(MAGIC);
+        bytes[8..12].copy_from_slice(&1u32.to_le_bytes());
+        bytes[12..20].copy_from_slice(&32u64.to_le_bytes());
+        bytes[20..28].copy_from_slice(&16u64.to_le_bytes());
+
+        let error = read_overlay_from_bytes(&bytes).expect_err("payload outside file");
+        assert_eq!(error.code, ERR_INVALID_EXECUTABLE);
+        assert!(error.message.contains("outside"));
+    }
+
+    #[test]
+    fn rejects_invalid_metadata_json() {
+        let metadata = b"not-json";
+        let script = b"echo";
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(metadata);
+        bytes.extend_from_slice(script);
+        bytes.extend_from_slice(MAGIC);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&(metadata.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&(script.len() as u64).to_le_bytes());
+
+        let error = read_overlay_from_bytes(&bytes).expect_err("invalid metadata");
+        assert_eq!(error.code, ERR_INVALID_EXECUTABLE);
+        assert!(error.message.contains("embedded metadata"));
+    }
 }

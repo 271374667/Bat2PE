@@ -150,7 +150,7 @@ impl StubPaths {
 #[derive(Debug, Clone)]
 pub struct BuildRequest {
     pub input_script: PathBuf,
-    pub output_exe: PathBuf,
+    pub output_exe: Option<PathBuf>,
     pub window_mode: WindowMode,
     pub icon_path: Option<PathBuf>,
     pub version_info: VersionInfo,
@@ -215,4 +215,52 @@ pub struct VerifyResult {
     pub exit_code_match: bool,
     pub stderr_match: bool,
     pub success: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use super::{StubPaths, VersionTriplet, WindowMode};
+    use crate::error::ERR_INVALID_INPUT;
+
+    #[test]
+    fn parses_version_triplet() {
+        let version = VersionTriplet::from_str("1.2.3").expect("valid version");
+        assert_eq!(version.major, 1);
+        assert_eq!(version.minor, 2);
+        assert_eq!(version.patch, 3);
+        assert_eq!(version.to_string(), "1.2.3");
+    }
+
+    #[test]
+    fn rejects_invalid_version_triplet() {
+        let error = VersionTriplet::from_str("1.2.3.4").expect_err("invalid version");
+        assert_eq!(error.code, ERR_INVALID_INPUT);
+        assert!(error.message.contains("major.minor.patch"));
+    }
+
+    #[test]
+    fn rejects_invalid_window_mode() {
+        let error = WindowMode::from_str("fullscreen").expect_err("invalid window mode");
+        assert_eq!(error.code, ERR_INVALID_INPUT);
+        assert!(error.message.contains("unsupported window mode"));
+    }
+
+    #[test]
+    fn chooses_stub_by_window_mode() {
+        let stubs = StubPaths {
+            console: "console.exe".into(),
+            windows: "windows.exe".into(),
+        };
+
+        assert_eq!(
+            stubs.for_window_mode(WindowMode::Visible),
+            "console.exe".into()
+        );
+        assert_eq!(
+            stubs.for_window_mode(WindowMode::Hidden),
+            "windows.exe".into()
+        );
+    }
 }

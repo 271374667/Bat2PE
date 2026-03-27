@@ -25,7 +25,7 @@ fn serialize_json<T: serde::Serialize>(value: &T) -> PyResult<String> {
 #[pyfunction]
 #[pyo3(signature = (
     input_script,
-    output_exe,
+    output_exe = None,
     *,
     window = "visible",
     icon = None,
@@ -41,7 +41,7 @@ fn serialize_json<T: serde::Serialize>(value: &T) -> PyResult<String> {
 ))]
 fn build(
     input_script: String,
-    output_exe: String,
+    output_exe: Option<String>,
     window: &str,
     icon: Option<String>,
     company: Option<String>,
@@ -71,7 +71,7 @@ fn build(
 
     let request = BuildRequest {
         input_script: PathBuf::from(input_script),
-        output_exe: PathBuf::from(output_exe),
+        output_exe: output_exe.map(PathBuf::from),
         window_mode: WindowMode::from_str(window).map_err(to_py_error)?,
         icon_path: icon.map(PathBuf::from),
         version_info,
