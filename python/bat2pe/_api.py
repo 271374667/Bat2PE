@@ -1,3 +1,10 @@
+"""Object-oriented and functional Python API for bat2pe.
+
+`Builder`, `Inspector`, and `Verifier` are the primary object-oriented entry
+points. The top-level `build()`, `inspect()`, and `verify()` helpers are thin
+wrappers for callers that prefer a functional style.
+"""
+
 from __future__ import annotations
 
 import importlib
@@ -12,6 +19,16 @@ Pathish: TypeAlias = str | Path
 
 
 def _load_native():
+    """Load the compiled native extension used by the public API.
+
+    Returns:
+        module: The imported `bat2pe._native` module.
+
+    Raises:
+        RuntimeError: If the compiled extension is unavailable in the current
+            environment.
+    """
+
     try:
         return importlib.import_module("bat2pe._native")
     except ImportError as exc:  # pragma: no cover - depends on local build state
@@ -21,10 +38,29 @@ def _load_native():
 
 
 def _normalize_path(value: Pathish) -> str:
+    """Convert a path-like value to the string form expected by native code.
+
+    Args:
+        value: File system path supplied as a string or `pathlib.Path`.
+
+    Returns:
+        str: The normalized path string forwarded to the native extension.
+    """
+
     return str(Path(value))
 
 
 def _candidate_stub_paths(binary_name: str) -> list[Path]:
+    """Build the ordered list of stub executable locations to probe.
+
+    Args:
+        binary_name: Stub executable base name without the `.exe` suffix.
+
+    Returns:
+        list[Path]: Candidate paths searched from packaged binaries to local
+        development build outputs.
+    """
+
     package_dir = Path(__file__).resolve().parent
     repo_root = package_dir.parents[1]
     return [
@@ -35,6 +71,16 @@ def _candidate_stub_paths(binary_name: str) -> list[Path]:
 
 
 def _find_stub(binary_name: str) -> str | None:
+    """Return the first existing stub executable for a given binary name.
+
+    Args:
+        binary_name: Stub executable base name without the `.exe` suffix.
+
+    Returns:
+        str | None: Absolute path to the first discovered stub executable, or
+        `None` when no candidate exists.
+    """
+
     for candidate in _candidate_stub_paths(binary_name):
         if candidate.exists():
             return str(candidate)
@@ -42,7 +88,25 @@ def _find_stub(binary_name: str) -> str | None:
 
 
 class Builder:
-    """Build a bat2pe executable from a batch script."""
+    """Stateful builder for converting a batch script into an executable.
+
+    This class is the object-oriented entry point for build configuration. It
+    stores all build inputs on the instance so callers can prepare options once
+    and invoke `build()` later.
+
+    Examples:
+        Build a hidden-window executable with version metadata:
+
+            builder = Builder(
+                input_script="scripts/hello.bat",
+                output_exe="dist/hello.exe",
+                window="hidden",
+                company="Example Co.",
+                product="Batch Tools",
+                file_version="1.2.0",
+            )
+            result = builder.build()
+    """
 
     def __init__(
         self,
@@ -61,6 +125,35 @@ class Builder:
         stub_console: Pathish | None = None,
         stub_windows: Pathish | None = None,
     ) -> None:
+        """Initialize a build request.
+
+        Args:
+            input_script: Path to the source batch script to embed into the
+                generated executable.
+            output_exe: Optional output path for the generated executable. When
+                omitted, the native builder decides the final output location.
+            window: Window visibility mode forwarded to the native builder.
+                Common values are `"visible"` and `"hidden"`.
+            icon: Optional path to an `.ico` file embedded into the executable.
+            company: Optional company name written into version metadata.
+            product: Optional product name written into version metadata.
+            description: Optional file description written into version
+                metadata.
+            file_version: Optional file version string written into version
+                metadata.
+            product_version: Optional product version string written into
+                version metadata.
+            original_filename: Optional original filename recorded in version
+                metadata.
+            internal_name: Optional internal name recorded in version metadata.
+            stub_console: Optional path to the console-mode stub executable.
+                When omitted, bat2pe attempts to discover a packaged or locally
+                built stub automatically.
+            stub_windows: Optional path to the windowed stub executable. When
+                omitted, bat2pe attempts to discover a packaged or locally
+                built stub automatically.
+        """
+
         self.input_script = Path(input_script)
         self.output_exe = Path(output_exe) if output_exe is not None else None
         self.window = window
@@ -76,6 +169,23 @@ class Builder:
         self.stub_windows = Path(stub_windows) if stub_windows is not None else None
 
     def build(self) -> BuildResult:
+        """Build an executable from the options stored on this instance.
+
+        Returns:
+            BuildResult: Build metadata plus an inspection snapshot of the
+            generated executable.
+
+        Raises:
+            BuildError: If the native build process fails and returns a mapped
+                bat2pe build error.
+            RuntimeError: If the `bat2pe._native` extension is unavailable.
+
+        Examples:
+            Build immediately from a prepared builder:
+
+                result = Builder(input_script="hello.bat").build()
+        """
+
         native = _load_native()
         try:
             payload = native.build(
@@ -103,12 +213,46 @@ class Builder:
 
 
 class Inspector:
-    """Inspect a bat2pe-generated executable."""
+    """Stateful inspector for reading metadata from a generated executable.
+
+    Use this class when inspection is part of a larger workflow and you want to
+    keep the target executable on the instance before calling `inspect()`.
+
+    Examples:
+        Read embedded runtime and version information:
+
+            inspector = Inspector("dist/hello.exe")
+            result = inspector.inspect()
+    """
 
     def __init__(self, executable: Pathish) -> None:
+        """Initialize an inspector for a generated executable.
+
+        Args:
+            executable: Path to the `.exe` file produced by bat2pe and targeted
+                for inspection.
+        """
+
         self.executable = Path(executable)
 
     def inspect(self) -> InspectResult:
+        """Inspect the configured executable and decode its embedded metadata.
+
+        Returns:
+            InspectResult: Parsed executable metadata, including runtime
+            configuration, icon information, and version resources.
+
+        Raises:
+            InspectError: If inspection fails and the native layer reports an
+                inspection-specific error.
+            RuntimeError: If the `bat2pe._native` extension is unavailable.
+
+        Examples:
+            Inspect a generated executable:
+
+                result = Inspector("dist/hello.exe").inspect()
+        """
+
         native = _load_native()
         try:
             payload = native.inspect(_normalize_path(self.executable))
@@ -118,7 +262,21 @@ class Inspector:
 
 
 class Verifier:
-    """Compare the original script and generated executable."""
+    """Stateful verifier for comparing script and executable behavior.
+
+    The verifier runs the original batch script and the generated executable
+    with matching inputs, then compares their observable results.
+
+    Examples:
+        Verify that an executable behaves like its source script:
+
+            verifier = Verifier(
+                "scripts/hello.bat",
+                "dist/hello.exe",
+                args=["world"],
+            )
+            result = verifier.verify()
+    """
 
     def __init__(
         self,
@@ -128,12 +286,47 @@ class Verifier:
         args: Iterable[str] | None = None,
         cwd: Pathish | None = None,
     ) -> None:
+        """Initialize a verification request.
+
+        Args:
+            script: Path to the original batch script used as the behavior
+                baseline.
+            executable: Path to the generated executable to compare against the
+                original script.
+            args: Optional command-line arguments passed to both the script and
+                the executable during verification.
+            cwd: Optional working directory used for both executions. When
+                omitted, the native verifier uses its default working
+                directory.
+        """
+
         self.script = Path(script)
         self.executable = Path(executable)
         self.args = list(args or [])
         self.cwd = Path(cwd) if cwd is not None else None
 
     def verify(self) -> VerifyResult:
+        """Execute verification with the options stored on this instance.
+
+        Returns:
+            VerifyResult: Execution outputs for the script and executable plus
+            comparison flags that show whether they match.
+
+        Raises:
+            VerifyError: If verification cannot be completed before a
+                comparison result is produced.
+            RuntimeError: If the `bat2pe._native` extension is unavailable.
+
+        Examples:
+            Verify a generated executable with shared CLI arguments:
+
+                result = Verifier(
+                    "scripts/hello.bat",
+                    "dist/hello.exe",
+                    args=["--quiet"],
+                ).verify()
+        """
+
         native = _load_native()
         try:
             payload = native.verify_pair(
@@ -163,7 +356,49 @@ def build(
     stub_console: Pathish | None = None,
     stub_windows: Pathish | None = None,
 ) -> BuildResult:
-    """Build an executable with a functional top-level API."""
+    """Build an executable with the functional convenience API.
+
+    This is a thin wrapper around `Builder(...).build()` for callers that do
+    not need to keep a builder instance around.
+
+    Args:
+        input_script: Path to the source batch script to embed.
+        output_exe: Optional output path for the generated executable. When
+            omitted, the native builder chooses the destination path.
+        window: Window visibility mode forwarded to the native builder. Common
+            values are `"visible"` and `"hidden"`.
+        icon: Optional path to an `.ico` file embedded into the executable.
+        company: Optional company name written into version metadata.
+        product: Optional product name written into version metadata.
+        description: Optional file description written into version metadata.
+        file_version: Optional file version string written into version
+            metadata.
+        product_version: Optional product version string written into version
+            metadata.
+        original_filename: Optional original filename recorded in version
+            metadata.
+        internal_name: Optional internal name recorded in version metadata.
+        stub_console: Optional path to the console-mode stub executable.
+        stub_windows: Optional path to the windowed stub executable.
+
+    Returns:
+        BuildResult: Build metadata plus an inspection snapshot of the
+        generated executable.
+
+    Raises:
+        BuildError: If the native build process fails and returns a mapped
+            bat2pe build error.
+        RuntimeError: If the `bat2pe._native` extension is unavailable.
+
+    Examples:
+        Build an executable in one call:
+
+            result = build(
+                input_script="scripts/hello.bat",
+                output_exe="dist/hello.exe",
+                company="Example Co.",
+            )
+    """
 
     return Builder(
         input_script=input_script,
@@ -183,7 +418,27 @@ def build(
 
 
 def inspect(executable: Pathish) -> InspectResult:
-    """Inspect a generated executable with a functional top-level API."""
+    """Inspect a generated executable with the functional convenience API.
+
+    This is a thin wrapper around `Inspector(executable).inspect()`.
+
+    Args:
+        executable: Path to the generated executable that should be inspected.
+
+    Returns:
+        InspectResult: Parsed executable metadata, including runtime settings,
+        icon information, and version resources.
+
+    Raises:
+        InspectError: If inspection fails and the native layer reports an
+            inspection-specific error.
+        RuntimeError: If the `bat2pe._native` extension is unavailable.
+
+    Examples:
+        Inspect an executable in one call:
+
+            result = inspect("dist/hello.exe")
+    """
 
     return Inspector(executable).inspect()
 
@@ -195,6 +450,36 @@ def verify(
     args: Iterable[str] | None = None,
     cwd: Pathish | None = None,
 ) -> VerifyResult:
-    """Verify a generated executable with a functional top-level API."""
+    """Verify a generated executable with the functional convenience API.
+
+    This is a thin wrapper around `Verifier(...).verify()`.
+
+    Args:
+        script: Path to the original batch script used as the verification
+            baseline.
+        executable: Path to the generated executable that should behave like
+            the original script.
+        args: Optional command-line arguments passed to both the script and the
+            executable during verification.
+        cwd: Optional working directory used for both executions.
+
+    Returns:
+        VerifyResult: Execution outputs for the script and executable plus
+        comparison flags.
+
+    Raises:
+        VerifyError: If verification cannot be completed before a comparison
+            result is produced.
+        RuntimeError: If the `bat2pe._native` extension is unavailable.
+
+    Examples:
+        Compare a script and executable in one call:
+
+            result = verify(
+                "scripts/hello.bat",
+                "dist/hello.exe",
+                args=["--quiet"],
+            )
+    """
 
     return Verifier(script, executable, args=args, cwd=cwd).verify()
