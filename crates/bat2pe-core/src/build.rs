@@ -11,6 +11,7 @@ use crate::model::{
     BuildRequest, BuildResult, EmbeddedMetadata, IconInfo, RuntimeConfig, ScriptEncoding, StubPaths,
 };
 use crate::overlay::append_overlay;
+use crate::resources::apply_icon_resource;
 
 const OVERLAY_SCHEMA_VERSION: u32 = 1;
 
@@ -82,25 +83,25 @@ pub fn read_script_bytes(path: &Path) -> Result<(Vec<u8>, ScriptEncoding)> {
     Ok((bytes, encoding))
 }
 
-pub fn derive_output_exe_path(input_script: &Path) -> Result<std::path::PathBuf> {
-    let extension = normalized_script_extension(input_script)?;
+pub fn derive_output_exe_path(input_bat_path: &Path) -> Result<std::path::PathBuf> {
+    let extension = normalized_script_extension(input_bat_path)?;
     if extension != ".bat" && extension != ".cmd" {
         return Err(
             Bat2PeError::new(ERR_UNSUPPORTED_INPUT, "input must be a .bat or .cmd file")
-                .with_path(input_script.to_path_buf()),
+                .with_path(input_bat_path.to_path_buf()),
         );
     }
 
-    Ok(input_script.with_extension("exe"))
+    Ok(input_bat_path.with_extension("exe"))
 }
 
 pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
-    let (script_bytes, script_encoding) = read_script_bytes(&request.input_script)?;
-    let source_extension = normalized_script_extension(&request.input_script)?;
-    let output_exe = request
-        .output_exe
+    let (script_bytes, script_encoding) = read_script_bytes(&request.input_bat_path)?;
+    let source_extension = normalized_script_extension(&request.input_bat_path)?;
+    let output_exe_path = request
+        .output_exe_path
         .clone()
-        .unwrap_or(derive_output_exe_path(&request.input_script)?);
+        .unwrap_or(derive_output_exe_path(&request.input_bat_path)?);
 
     let stub_path = request.stub_paths.for_window_mode(request.window_mode);
     if !stub_path.exists() {
@@ -111,12 +112,12 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
         .with_path(stub_path));
     }
 
-    if !request.overwrite && output_exe.exists() {
+    if !request.overwrite && output_exe_path.exists() {
         return Err(Bat2PeError::new(
             ERR_INVALID_INPUT,
             "output executable already exists and overwrite is disabled",
         )
-        .with_path(output_exe.clone()));
+        .with_path(output_exe_path.clone()));
     }
 
     let icon = request
@@ -125,12 +126,17 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
         .map(load_icon_info)
         .transpose()?;
 
-    fs::copy(&stub_path, &output_exe).map_err(|error| Bat2PeError::io(&output_exe, &error))?;
+    fs::copy(&stub_path, &output_exe_path)
+        .map_err(|error| Bat2PeError::io(&output_exe_path, &error))?;
+
+    if let Some(icon_path) = request.icon_path.as_deref() {
+        apply_icon_resource(&output_exe_path, icon_path)?;
+    }
 
     let metadata = EmbeddedMetadata {
         schema_version: OVERLAY_SCHEMA_VERSION,
         source_script_name: request
-            .input_script
+            .input_bat_path
             .file_name()
             .map(|value| value.to_string_lossy().to_string())
             .unwrap_or_else(|| "script.cmd".to_string()),
@@ -148,16 +154,16 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
 
     let mut output = OpenOptions::new()
         .append(true)
-        .open(&output_exe)
-        .map_err(|error| Bat2PeError::io(&output_exe, &error))?;
+        .open(&output_exe_path)
+        .map_err(|error| Bat2PeError::io(&output_exe_path, &error))?;
     append_overlay(&mut output, &metadata, &script_bytes)?;
     output
         .flush()
-        .map_err(|error| Bat2PeError::io(&output_exe, &error))?;
+        .map_err(|error| Bat2PeError::io(&output_exe_path, &error))?;
 
-    let inspect = inspect_executable(&output_exe)?;
+    let inspect = inspect_executable(&output_exe_path)?;
     Ok(BuildResult {
-        output_exe,
+        output_exe_path,
         stub_path,
         script_encoding,
         script_length: script_bytes.len() as u64,

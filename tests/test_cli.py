@@ -1,8 +1,22 @@
 from __future__ import annotations
 
 import codecs
+import ctypes
 import json
 from pathlib import Path
+
+
+def _extract_icon_count(executable_path: Path) -> int:
+    shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+    shell32.ExtractIconExW.argtypes = [
+        ctypes.c_wchar_p,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_uint,
+    ]
+    shell32.ExtractIconExW.restype = ctypes.c_uint
+    return int(shell32.ExtractIconExW(str(executable_path), -1, None, None, 0))
 
 
 def test_cli_help_smoke(cli_runner) -> None:
@@ -16,23 +30,28 @@ def test_cli_help_smoke(cli_runner) -> None:
 def test_cli_reports_usage_errors(cli_runner, test_dir: Path) -> None:
     missing_input = cli_runner("build")
     assert missing_input.returncode == 1
-    assert "missing input script" in missing_input.stderr
+    assert "missing input bat path" in missing_input.stderr
 
     inspect_missing = cli_runner("inspect")
     assert inspect_missing.returncode == 1
     assert "missing executable path" in inspect_missing.stderr
 
-    verify_missing = cli_runner("verify", "--script", test_dir / "missing.bat")
+    verify_missing = cli_runner("verify", "--script-path", test_dir / "missing.bat")
     assert verify_missing.returncode == 1
-    assert "missing --exe" in verify_missing.stderr
+    assert "missing --exe-path" in verify_missing.stderr
 
     verify_positional = cli_runner("verify", "positional")
     assert verify_positional.returncode == 1
     assert "verify only accepts named options" in verify_positional.stderr
 
-    missing_out_value = cli_runner("build", test_dir / "missing.bat", "--out")
+    missing_out_value = cli_runner(
+        "build",
+        "--input-bat-path",
+        test_dir / "missing.bat",
+        "--output-exe-path",
+    )
     assert missing_out_value.returncode == 1
-    assert "missing value for --out" in missing_out_value.stderr
+    assert "missing value for --output-exe-path" in missing_out_value.stderr
 
 
 def test_cli_build_and_inspect_returns_full_metadata(
@@ -50,10 +69,11 @@ def test_cli_build_and_inspect_returns_full_metadata(
     output = test_dir / "launcher.exe"
     build = cli_runner(
         "build",
+        "--input-bat-path",
         script,
-        "--out",
+        "--output-exe-path",
         output,
-        "--icon",
+        "--icon-path",
         icon,
         "--company",
         "Acme",
@@ -75,7 +95,7 @@ def test_cli_build_and_inspect_returns_full_metadata(
 
     assert build.returncode == 0, build.stderr
     payload = json.loads(build.stdout)
-    assert Path(payload["output_exe"]) == output
+    assert Path(payload["output_exe_path"]) == output
     assert payload["window_mode"] == "hidden"
     assert payload["script_encoding"] == "utf8"
     assert payload["inspect"]["source_extension"] == ".bat"
@@ -94,12 +114,13 @@ def test_cli_build_and_inspect_returns_full_metadata(
         "patch": 6,
     }
 
-    inspect = cli_runner("inspect", output)
+    inspect = cli_runner("inspect", "--exe-path", output)
     assert inspect.returncode == 0, inspect.stderr
     inspect_payload = json.loads(inspect.stdout)
     assert inspect_payload["source_script_name"] == "launcher.bat"
     assert inspect_payload["schema_version"] == 1
     assert inspect_payload["icon"]["size"] == len(fake_ico_bytes)
+    assert _extract_icon_count(output) > 0
 
 
 def test_cli_supports_overwrite_and_quiet_mode(cli_runner, test_dir: Path) -> None:
@@ -107,16 +128,23 @@ def test_cli_supports_overwrite_and_quiet_mode(cli_runner, test_dir: Path) -> No
     script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
     output = test_dir / "overwrite.exe"
 
-    first = cli_runner("build", script, "--out", output)
+    first = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
     assert first.returncode == 0, first.stderr
     assert output.exists()
 
-    second = cli_runner("build", script, "--out", output, "--quiet")
+    second = cli_runner(
+        "build",
+        "--input-bat-path",
+        script,
+        "--output-exe-path",
+        output,
+        "--quiet",
+    )
     assert second.returncode == 0, second.stderr
     assert second.stdout == ""
     assert output.exists()
 
-    inspect_quiet = cli_runner("inspect", output, "--quiet")
+    inspect_quiet = cli_runner("inspect", "--exe-path", output, "--quiet")
     assert inspect_quiet.returncode == 0, inspect_quiet.stderr
     assert inspect_quiet.stdout == ""
 
@@ -130,14 +158,14 @@ def test_cli_defaults_output_path_and_overwrites_existing_file(
     default_output = test_dir / "default_output.exe"
     default_output.write_text("stale exe placeholder", encoding="utf-8")
 
-    build = cli_runner("build", script)
+    build = cli_runner("build", "--input-bat-path", script)
 
     assert build.returncode == 0, build.stderr
     payload = json.loads(build.stdout)
-    assert Path(payload["output_exe"]) == default_output
+    assert Path(payload["output_exe_path"]) == default_output
     assert default_output.exists()
 
-    inspect = cli_runner("inspect", default_output)
+    inspect = cli_runner("inspect", "--exe-path", default_output)
     assert inspect.returncode == 0, inspect.stderr
     inspect_payload = json.loads(inspect.stdout)
     assert inspect_payload["source_script_name"] == "default_output.cmd"
@@ -151,17 +179,31 @@ def test_cli_rejects_conflicting_verbosity_and_invalid_inputs(
     script.write_text("not a batch file", encoding="utf-8")
     output = test_dir / "bad.exe"
 
-    conflict = cli_runner("build", script, "--out", output, "--quiet", "--verbose")
+    conflict = cli_runner(
+        "build",
+        "--input-bat-path",
+        script,
+        "--output-exe-path",
+        output,
+        "--quiet",
+        "--verbose",
+    )
     assert conflict.returncode == 1
     assert "--quiet and --verbose are mutually exclusive" in conflict.stderr
 
-    bad_script = cli_runner("build", script, "--out", output)
+    bad_script = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
     assert bad_script.returncode == 1
     assert "input must end with .bat or .cmd" in bad_script.stderr
 
     empty_script = test_dir / "empty.bat"
     empty_script.write_bytes(b"")
-    empty_result = cli_runner("build", empty_script, "--out", output)
+    empty_result = cli_runner(
+        "build",
+        "--input-bat-path",
+        empty_script,
+        "--output-exe-path",
+        output,
+    )
     assert empty_result.returncode == 1
     assert "input script is empty" in empty_result.stderr
 
@@ -169,14 +211,23 @@ def test_cli_rejects_conflicting_verbosity_and_invalid_inputs(
     real_script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
     bad_icon = test_dir / "icon.txt"
     bad_icon.write_text("not an icon", encoding="utf-8")
-    bad_icon_result = cli_runner("build", real_script, "--out", output, "--icon", bad_icon)
+    bad_icon_result = cli_runner(
+        "build",
+        "--input-bat-path",
+        real_script,
+        "--output-exe-path",
+        output,
+        "--icon-path",
+        bad_icon,
+    )
     assert bad_icon_result.returncode == 1
     assert "only .ico icon files are supported" in bad_icon_result.stderr
 
     invalid_window = cli_runner(
         "build",
+        "--input-bat-path",
         real_script,
-        "--out",
+        "--output-exe-path",
         output,
         "--window",
         "invalid",
@@ -186,8 +237,9 @@ def test_cli_rejects_conflicting_verbosity_and_invalid_inputs(
 
     invalid_version = cli_runner(
         "build",
+        "--input-bat-path",
         real_script,
-        "--out",
+        "--output-exe-path",
         output,
         "--file-version",
         "1.2.3.4",
@@ -197,7 +249,7 @@ def test_cli_rejects_conflicting_verbosity_and_invalid_inputs(
 
     invalid_exe = test_dir / "invalid.exe"
     invalid_exe.write_text("plain text", encoding="utf-8")
-    inspect = cli_runner("inspect", invalid_exe)
+    inspect = cli_runner("inspect", "--exe-path", invalid_exe)
     assert inspect.returncode == 1
     assert "bat2pe overlay" in inspect.stderr
 
@@ -212,18 +264,18 @@ def test_cli_verify_matches_args_and_working_directory(cli_runner, test_dir: Pat
         b"exit /b 7\r\n"
     )
     output = test_dir / "args_and_cwd.exe"
-    build = cli_runner("build", script, "--out", output)
+    build = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
     assert build.returncode == 0, build.stderr
 
     working_dir = test_dir / "runtime cwd"
     working_dir.mkdir()
     verify = cli_runner(
         "verify",
-        "--script",
+        "--script-path",
         script,
-        "--exe",
+        "--exe-path",
         output,
-        "--cwd",
+        "--cwd-path",
         working_dir,
         "--arg",
         "alpha beta",
@@ -243,11 +295,11 @@ def test_cli_verify_matches_args_and_working_directory(cli_runner, test_dir: Pat
 
     quiet = cli_runner(
         "verify",
-        "--script",
+        "--script-path",
         script,
-        "--exe",
+        "--exe-path",
         output,
-        "--cwd",
+        "--cwd-path",
         working_dir,
         "--quiet",
     )
@@ -262,10 +314,10 @@ def test_cli_verify_reports_mismatch(cli_runner, test_dir: Path) -> None:
     different_script.write_bytes(b"@echo off\r\necho different 1>&2\r\nexit /b 5\r\n")
     output = test_dir / "mismatch.exe"
 
-    build = cli_runner("build", built_script, "--out", output)
+    build = cli_runner("build", "--input-bat-path", built_script, "--output-exe-path", output)
     assert build.returncode == 0, build.stderr
 
-    verify = cli_runner("verify", "--script", different_script, "--exe", output)
+    verify = cli_runner("verify", "--script-path", different_script, "--exe-path", output)
     assert verify.returncode == 1
     payload = json.loads(verify.stdout)
     assert payload["success"] is False
@@ -298,10 +350,10 @@ def test_cli_records_supported_encodings(cli_runner, test_dir: Path) -> None:
         script = test_dir / file_name
         script.write_bytes(script_bytes)
         output = test_dir / f"{script.stem}.exe"
-        build = cli_runner("build", script, "--out", output)
+        build = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
         assert build.returncode == 0, build.stderr
 
-        inspect = cli_runner("inspect", output)
+        inspect = cli_runner("inspect", "--exe-path", output)
         assert inspect.returncode == 0, inspect.stderr
         payload = json.loads(inspect.stdout)
         assert payload["script_encoding"] == expected
@@ -312,7 +364,7 @@ def test_cli_rejects_unsupported_encoding(cli_runner, test_dir: Path) -> None:
     script.write_bytes(b"@\x00e\x00c\x00h\x00o\x00")
     output = test_dir / "unsupported.exe"
 
-    completed = cli_runner("build", script, "--out", output)
+    completed = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
 
     assert completed.returncode == 1
     assert "unsupported script encoding" in completed.stderr

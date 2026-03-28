@@ -43,8 +43,8 @@ fn real_main() -> Result<i32> {
 }
 
 fn run_build(args: Vec<OsString>) -> Result<i32> {
-    let mut input_script: Option<PathBuf> = None;
-    let mut output_exe: Option<PathBuf> = None;
+    let mut input_bat_path: Option<PathBuf> = None;
+    let mut output_exe_path: Option<PathBuf> = None;
     let mut icon_path: Option<PathBuf> = None;
     let mut version_info = VersionInfo::default();
     let mut window_mode = WindowMode::Visible;
@@ -55,12 +55,16 @@ fn run_build(args: Vec<OsString>) -> Result<i32> {
     while index < args.len() {
         let key = args[index].to_string_lossy();
         match key.as_ref() {
-            "--out" => {
-                output_exe = Some(expect_path_value(&args, index + 1, "--out")?);
+            "--input-bat-path" => {
+                input_bat_path = Some(expect_path_value(&args, index + 1, "--input-bat-path")?);
                 index += 2;
             }
-            "--icon" => {
-                icon_path = Some(expect_path_value(&args, index + 1, "--icon")?);
+            "--output-exe-path" | "--out" => {
+                output_exe_path = Some(expect_path_value(&args, index + 1, &key)?);
+                index += 2;
+            }
+            "--icon-path" | "--icon" => {
+                icon_path = Some(expect_path_value(&args, index + 1, &key)?);
                 index += 2;
             }
             "--company" => {
@@ -118,8 +122,8 @@ fn run_build(args: Vec<OsString>) -> Result<i32> {
                 return Err(usage_error(format!("unknown option: {value}")));
             }
             _ => {
-                if input_script.is_none() {
-                    input_script = Some(PathBuf::from(args[index].clone()));
+                if input_bat_path.is_none() {
+                    input_bat_path = Some(PathBuf::from(args[index].clone()));
                     index += 1;
                 } else {
                     return Err(usage_error("unexpected extra positional argument"));
@@ -130,8 +134,8 @@ fn run_build(args: Vec<OsString>) -> Result<i32> {
 
     let verbosity = resolve_verbosity(quiet, verbose)?;
     let request = BuildRequest {
-        input_script: input_script.ok_or_else(|| usage_error("missing input script"))?,
-        output_exe,
+        input_bat_path: input_bat_path.ok_or_else(|| usage_error("missing input bat path"))?,
+        output_exe_path,
         window_mode,
         icon_path,
         version_info,
@@ -148,7 +152,7 @@ fn run_build(args: Vec<OsString>) -> Result<i32> {
 }
 
 fn run_inspect(args: Vec<OsString>) -> Result<i32> {
-    let mut target: Option<PathBuf> = None;
+    let mut executable_path: Option<PathBuf> = None;
     let mut quiet = false;
     let mut verbose = false;
 
@@ -156,6 +160,10 @@ fn run_inspect(args: Vec<OsString>) -> Result<i32> {
     while index < args.len() {
         let key = args[index].to_string_lossy();
         match key.as_ref() {
+            "--exe-path" => {
+                executable_path = Some(expect_path_value(&args, index + 1, "--exe-path")?);
+                index += 2;
+            }
             "--quiet" => {
                 quiet = true;
                 index += 1;
@@ -168,8 +176,8 @@ fn run_inspect(args: Vec<OsString>) -> Result<i32> {
                 return Err(usage_error(format!("unknown option: {value}")));
             }
             _ => {
-                if target.is_none() {
-                    target = Some(PathBuf::from(args[index].clone()));
+                if executable_path.is_none() {
+                    executable_path = Some(PathBuf::from(args[index].clone()));
                     index += 1;
                 } else {
                     return Err(usage_error("unexpected extra positional argument"));
@@ -179,8 +187,9 @@ fn run_inspect(args: Vec<OsString>) -> Result<i32> {
     }
 
     let verbosity = resolve_verbosity(quiet, verbose)?;
-    let result =
-        inspect_executable(&target.ok_or_else(|| usage_error("missing executable path"))?)?;
+    let result = inspect_executable(
+        &executable_path.ok_or_else(|| usage_error("missing executable path"))?,
+    )?;
     if !matches!(verbosity, Verbosity::Quiet) {
         print_json(&result)?;
     }
@@ -190,7 +199,7 @@ fn run_inspect(args: Vec<OsString>) -> Result<i32> {
 fn run_verify(args: Vec<OsString>) -> Result<i32> {
     let mut script_path: Option<PathBuf> = None;
     let mut exe_path: Option<PathBuf> = None;
-    let mut working_dir: Option<PathBuf> = None;
+    let mut working_dir_path: Option<PathBuf> = None;
     let mut passthrough_args: Vec<OsString> = Vec::new();
     let mut quiet = false;
     let mut verbose = false;
@@ -199,16 +208,16 @@ fn run_verify(args: Vec<OsString>) -> Result<i32> {
     while index < args.len() {
         let key = args[index].to_string_lossy();
         match key.as_ref() {
-            "--script" => {
-                script_path = Some(expect_path_value(&args, index + 1, "--script")?);
+            "--script-path" | "--script" => {
+                script_path = Some(expect_path_value(&args, index + 1, &key)?);
                 index += 2;
             }
-            "--exe" => {
-                exe_path = Some(expect_path_value(&args, index + 1, "--exe")?);
+            "--exe-path" | "--exe" => {
+                exe_path = Some(expect_path_value(&args, index + 1, &key)?);
                 index += 2;
             }
-            "--cwd" => {
-                working_dir = Some(expect_path_value(&args, index + 1, "--cwd")?);
+            "--cwd-path" | "--cwd" => {
+                working_dir_path = Some(expect_path_value(&args, index + 1, &key)?);
                 index += 2;
             }
             "--arg" => {
@@ -236,10 +245,10 @@ fn run_verify(args: Vec<OsString>) -> Result<i32> {
 
     let verbosity = resolve_verbosity(quiet, verbose)?;
     let result = verify(&VerifyRequest {
-        script_path: script_path.ok_or_else(|| usage_error("missing --script"))?,
-        exe_path: exe_path.ok_or_else(|| usage_error("missing --exe"))?,
+        script_path: script_path.ok_or_else(|| usage_error("missing --script-path"))?,
+        exe_path: exe_path.ok_or_else(|| usage_error("missing --exe-path"))?,
         arguments: passthrough_args,
-        working_dir,
+        working_dir: working_dir_path,
     })?;
 
     if !matches!(verbosity, Verbosity::Quiet) {
@@ -296,12 +305,12 @@ fn usage_error(message: impl Into<String>) -> Bat2PeError {
 fn print_usage() {
     println!(
         "\
-bat2pe build <input.bat|input.cmd> [--out <output.exe>] [options]
-bat2pe inspect <output.exe> [--quiet|--verbose]
-bat2pe verify --script <input.bat|input.cmd> --exe <output.exe> [--cwd PATH] [--arg VALUE ...]
+bat2pe build --input-bat-path <input.bat|input.cmd> [--output-exe-path <output.exe>] [options]
+bat2pe inspect --exe-path <output.exe> [--quiet|--verbose]
+bat2pe verify --script-path <input.bat|input.cmd> --exe-path <output.exe> [--cwd-path PATH] [--arg VALUE ...]
 
 Build options:
-  --icon PATH
+  --icon-path PATH
   --company TEXT
   --product TEXT
   --description TEXT

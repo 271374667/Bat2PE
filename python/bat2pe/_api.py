@@ -87,6 +87,23 @@ def _find_stub(binary_name: str) -> str | None:
     return None
 
 
+def _resolve_alias(
+    preferred_value,
+    legacy_value,
+    *,
+    preferred_name: str,
+    legacy_name: str,
+    required: bool = False,
+):
+    if preferred_value is not None and legacy_value is not None:
+        raise TypeError(f"pass either {preferred_name!r} or {legacy_name!r}, not both")
+
+    value = preferred_value if preferred_value is not None else legacy_value
+    if required and value is None:
+        raise TypeError(f"missing required argument: {preferred_name!r}")
+    return value
+
+
 class Builder:
     """Stateful builder for converting a batch script into an executable.
 
@@ -98,8 +115,8 @@ class Builder:
         Build a hidden-window executable with version metadata:
 
             builder = Builder(
-                input_script="scripts/hello.bat",
-                output_exe="dist/hello.exe",
+                input_bat_path="scripts/hello.bat",
+                output_exe_path="dist/hello.exe",
                 window="hidden",
                 company="Example Co.",
                 product="Batch Tools",
@@ -111,10 +128,10 @@ class Builder:
     def __init__(
         self,
         *,
-        input_script: Pathish,
-        output_exe: Pathish | None = None,
+        input_bat_path: Pathish | None = None,
+        output_exe_path: Pathish | None = None,
         window: str = "visible",
-        icon: Pathish | None = None,
+        icon_path: Pathish | None = None,
         company: str | None = None,
         product: str | None = None,
         description: str | None = None,
@@ -122,19 +139,24 @@ class Builder:
         product_version: str | None = None,
         original_filename: str | None = None,
         internal_name: str | None = None,
+        stub_console_path: Pathish | None = None,
+        stub_windows_path: Pathish | None = None,
+        input_script: Pathish | None = None,
+        output_exe: Pathish | None = None,
+        icon: Pathish | None = None,
         stub_console: Pathish | None = None,
         stub_windows: Pathish | None = None,
     ) -> None:
         """Initialize a build request.
 
         Args:
-            input_script: Path to the source batch script to embed into the
+            input_bat_path: Path to the source batch script to embed into the
                 generated executable.
-            output_exe: Optional output path for the generated executable. When
+            output_exe_path: Optional output path for the generated executable. When
                 omitted, the native builder decides the final output location.
             window: Window visibility mode forwarded to the native builder.
                 Common values are `"visible"` and `"hidden"`.
-            icon: Optional path to an `.ico` file embedded into the executable.
+            icon_path: Optional path to an `.ico` file embedded into the executable.
             company: Optional company name written into version metadata.
             product: Optional product name written into version metadata.
             description: Optional file description written into version
@@ -146,18 +168,52 @@ class Builder:
             original_filename: Optional original filename recorded in version
                 metadata.
             internal_name: Optional internal name recorded in version metadata.
-            stub_console: Optional path to the console-mode stub executable.
+            stub_console_path: Optional path to the console-mode stub executable.
                 When omitted, bat2pe attempts to discover a packaged or locally
                 built stub automatically.
-            stub_windows: Optional path to the windowed stub executable. When
+            stub_windows_path: Optional path to the windowed stub executable. When
                 omitted, bat2pe attempts to discover a packaged or locally
                 built stub automatically.
         """
 
-        self.input_script = Path(input_script)
-        self.output_exe = Path(output_exe) if output_exe is not None else None
+        resolved_input_bat_path = _resolve_alias(
+            input_bat_path,
+            input_script,
+            preferred_name="input_bat_path",
+            legacy_name="input_script",
+            required=True,
+        )
+        resolved_output_exe_path = _resolve_alias(
+            output_exe_path,
+            output_exe,
+            preferred_name="output_exe_path",
+            legacy_name="output_exe",
+        )
+        resolved_icon_path = _resolve_alias(
+            icon_path,
+            icon,
+            preferred_name="icon_path",
+            legacy_name="icon",
+        )
+        resolved_stub_console_path = _resolve_alias(
+            stub_console_path,
+            stub_console,
+            preferred_name="stub_console_path",
+            legacy_name="stub_console",
+        )
+        resolved_stub_windows_path = _resolve_alias(
+            stub_windows_path,
+            stub_windows,
+            preferred_name="stub_windows_path",
+            legacy_name="stub_windows",
+        )
+
+        self.input_bat_path = Path(resolved_input_bat_path)
+        self.output_exe_path = (
+            Path(resolved_output_exe_path) if resolved_output_exe_path is not None else None
+        )
         self.window = window
-        self.icon = Path(icon) if icon is not None else None
+        self.icon_path = Path(resolved_icon_path) if resolved_icon_path is not None else None
         self.company = company
         self.product = product
         self.description = description
@@ -165,8 +221,32 @@ class Builder:
         self.product_version = product_version
         self.original_filename = original_filename
         self.internal_name = internal_name
-        self.stub_console = Path(stub_console) if stub_console is not None else None
-        self.stub_windows = Path(stub_windows) if stub_windows is not None else None
+        self.stub_console_path = (
+            Path(resolved_stub_console_path) if resolved_stub_console_path is not None else None
+        )
+        self.stub_windows_path = (
+            Path(resolved_stub_windows_path) if resolved_stub_windows_path is not None else None
+        )
+
+    @property
+    def input_script(self) -> Path:
+        return self.input_bat_path
+
+    @property
+    def output_exe(self) -> Path | None:
+        return self.output_exe_path
+
+    @property
+    def icon(self) -> Path | None:
+        return self.icon_path
+
+    @property
+    def stub_console(self) -> Path | None:
+        return self.stub_console_path
+
+    @property
+    def stub_windows(self) -> Path | None:
+        return self.stub_windows_path
 
     def build(self) -> BuildResult:
         """Build an executable from the options stored on this instance.
@@ -183,16 +263,18 @@ class Builder:
         Examples:
             Build immediately from a prepared builder:
 
-                result = Builder(input_script="hello.bat").build()
+                result = Builder(input_bat_path="hello.bat").build()
         """
 
         native = _load_native()
         try:
             payload = native.build(
-                _normalize_path(self.input_script),
-                _normalize_path(self.output_exe) if self.output_exe is not None else None,
+                _normalize_path(self.input_bat_path),
+                _normalize_path(self.output_exe_path)
+                if self.output_exe_path is not None
+                else None,
                 window=self.window,
-                icon=_normalize_path(self.icon) if self.icon is not None else None,
+                icon_path=_normalize_path(self.icon_path) if self.icon_path is not None else None,
                 company=self.company,
                 product=self.product,
                 description=self.description,
@@ -200,11 +282,11 @@ class Builder:
                 product_version=self.product_version,
                 original_filename=self.original_filename,
                 internal_name=self.internal_name,
-                stub_console=_normalize_path(self.stub_console)
-                if self.stub_console is not None
+                stub_console_path=_normalize_path(self.stub_console_path)
+                if self.stub_console_path is not None
                 else _find_stub("bat2pe-stub-console"),
-                stub_windows=_normalize_path(self.stub_windows)
-                if self.stub_windows is not None
+                stub_windows_path=_normalize_path(self.stub_windows_path)
+                if self.stub_windows_path is not None
                 else _find_stub("bat2pe-stub-windows"),
             )
         except Exception as exc:  # noqa: BLE001
@@ -225,22 +307,37 @@ class Inspector:
             result = inspector.inspect()
     """
 
-    def __init__(self, executable: Pathish) -> None:
+    def __init__(
+        self,
+        executable_path: Pathish | None = None,
+        executable: Pathish | None = None,
+    ) -> None:
         """Initialize an inspector for a generated executable.
 
         Args:
-            executable: Path to the `.exe` file produced by bat2pe and targeted
+            executable_path: Path to the `.exe` file produced by bat2pe and targeted
                 for inspection.
         """
 
-        self.executable = Path(executable)
+        resolved_executable_path = _resolve_alias(
+            executable_path,
+            executable,
+            preferred_name="executable_path",
+            legacy_name="executable",
+            required=True,
+        )
+        self.executable_path = Path(resolved_executable_path)
+
+    @property
+    def executable(self) -> Path:
+        return self.executable_path
 
     def inspect(self) -> InspectResult:
         """Inspect the configured executable and decode its embedded metadata.
 
         Returns:
             InspectResult: Parsed executable metadata, including runtime
-            configuration, icon information, and version resources.
+            configuration, icon information, and version metadata.
 
         Raises:
             InspectError: If inspection fails and the native layer reports an
@@ -255,7 +352,7 @@ class Inspector:
 
         native = _load_native()
         try:
-            payload = native.inspect(_normalize_path(self.executable))
+            payload = native.inspect(_normalize_path(self.executable_path))
         except Exception as exc:  # noqa: BLE001
             raise map_native_error(exc, InspectError) from exc
         return InspectResult.from_dict(json.loads(payload))
@@ -280,30 +377,66 @@ class Verifier:
 
     def __init__(
         self,
-        script: Pathish,
-        executable: Pathish,
+        script_path: Pathish | None = None,
+        executable_path: Pathish | None = None,
         *,
         args: Iterable[str] | None = None,
+        cwd_path: Pathish | None = None,
+        script: Pathish | None = None,
+        executable: Pathish | None = None,
         cwd: Pathish | None = None,
     ) -> None:
         """Initialize a verification request.
 
         Args:
-            script: Path to the original batch script used as the behavior
+            script_path: Path to the original batch script used as the behavior
                 baseline.
-            executable: Path to the generated executable to compare against the
+            executable_path: Path to the generated executable to compare against the
                 original script.
             args: Optional command-line arguments passed to both the script and
                 the executable during verification.
-            cwd: Optional working directory used for both executions. When
+            cwd_path: Optional working directory used for both executions. When
                 omitted, the native verifier uses its default working
                 directory.
         """
 
-        self.script = Path(script)
-        self.executable = Path(executable)
+        resolved_script_path = _resolve_alias(
+            script_path,
+            script,
+            preferred_name="script_path",
+            legacy_name="script",
+            required=True,
+        )
+        resolved_executable_path = _resolve_alias(
+            executable_path,
+            executable,
+            preferred_name="executable_path",
+            legacy_name="executable",
+            required=True,
+        )
+        resolved_cwd_path = _resolve_alias(
+            cwd_path,
+            cwd,
+            preferred_name="cwd_path",
+            legacy_name="cwd",
+        )
+
+        self.script_path = Path(resolved_script_path)
+        self.executable_path = Path(resolved_executable_path)
         self.args = list(args or [])
-        self.cwd = Path(cwd) if cwd is not None else None
+        self.cwd_path = Path(resolved_cwd_path) if resolved_cwd_path is not None else None
+
+    @property
+    def script(self) -> Path:
+        return self.script_path
+
+    @property
+    def executable(self) -> Path:
+        return self.executable_path
+
+    @property
+    def cwd(self) -> Path | None:
+        return self.cwd_path
 
     def verify(self) -> VerifyResult:
         """Execute verification with the options stored on this instance.
@@ -330,10 +463,10 @@ class Verifier:
         native = _load_native()
         try:
             payload = native.verify_pair(
-                _normalize_path(self.script),
-                _normalize_path(self.executable),
+                _normalize_path(self.script_path),
+                _normalize_path(self.executable_path),
                 args=self.args,
-                cwd=_normalize_path(self.cwd) if self.cwd is not None else None,
+                cwd=_normalize_path(self.cwd_path) if self.cwd_path is not None else None,
             )
         except Exception as exc:  # noqa: BLE001
             raise map_native_error(exc, VerifyError) from exc
@@ -342,10 +475,10 @@ class Verifier:
 
 def build(
     *,
-    input_script: Pathish,
-    output_exe: Pathish | None = None,
+    input_bat_path: Pathish | None = None,
+    output_exe_path: Pathish | None = None,
     window: str = "visible",
-    icon: Pathish | None = None,
+    icon_path: Pathish | None = None,
     company: str | None = None,
     product: str | None = None,
     description: str | None = None,
@@ -353,6 +486,11 @@ def build(
     product_version: str | None = None,
     original_filename: str | None = None,
     internal_name: str | None = None,
+    stub_console_path: Pathish | None = None,
+    stub_windows_path: Pathish | None = None,
+    input_script: Pathish | None = None,
+    output_exe: Pathish | None = None,
+    icon: Pathish | None = None,
     stub_console: Pathish | None = None,
     stub_windows: Pathish | None = None,
 ) -> BuildResult:
@@ -362,12 +500,12 @@ def build(
     not need to keep a builder instance around.
 
     Args:
-        input_script: Path to the source batch script to embed.
-        output_exe: Optional output path for the generated executable. When
+        input_bat_path: Path to the source batch script to embed.
+        output_exe_path: Optional output path for the generated executable. When
             omitted, the native builder chooses the destination path.
         window: Window visibility mode forwarded to the native builder. Common
             values are `"visible"` and `"hidden"`.
-        icon: Optional path to an `.ico` file embedded into the executable.
+        icon_path: Optional path to an `.ico` file embedded into the executable.
         company: Optional company name written into version metadata.
         product: Optional product name written into version metadata.
         description: Optional file description written into version metadata.
@@ -378,8 +516,8 @@ def build(
         original_filename: Optional original filename recorded in version
             metadata.
         internal_name: Optional internal name recorded in version metadata.
-        stub_console: Optional path to the console-mode stub executable.
-        stub_windows: Optional path to the windowed stub executable.
+        stub_console_path: Optional path to the console-mode stub executable.
+        stub_windows_path: Optional path to the windowed stub executable.
 
     Returns:
         BuildResult: Build metadata plus an inspection snapshot of the
@@ -394,17 +532,17 @@ def build(
         Build an executable in one call:
 
             result = build(
-                input_script="scripts/hello.bat",
-                output_exe="dist/hello.exe",
+                input_bat_path="scripts/hello.bat",
+                output_exe_path="dist/hello.exe",
                 company="Example Co.",
             )
     """
 
     return Builder(
-        input_script=input_script,
-        output_exe=output_exe,
+        input_bat_path=input_bat_path,
+        output_exe_path=output_exe_path,
         window=window,
-        icon=icon,
+        icon_path=icon_path,
         company=company,
         product=product,
         description=description,
@@ -412,22 +550,30 @@ def build(
         product_version=product_version,
         original_filename=original_filename,
         internal_name=internal_name,
+        stub_console_path=stub_console_path,
+        stub_windows_path=stub_windows_path,
+        input_script=input_script,
+        output_exe=output_exe,
+        icon=icon,
         stub_console=stub_console,
         stub_windows=stub_windows,
     ).build()
 
 
-def inspect(executable: Pathish) -> InspectResult:
+def inspect(
+    executable_path: Pathish | None = None,
+    executable: Pathish | None = None,
+) -> InspectResult:
     """Inspect a generated executable with the functional convenience API.
 
-    This is a thin wrapper around `Inspector(executable).inspect()`.
+    This is a thin wrapper around `Inspector(executable_path).inspect()`.
 
     Args:
-        executable: Path to the generated executable that should be inspected.
+        executable_path: Path to the generated executable that should be inspected.
 
     Returns:
         InspectResult: Parsed executable metadata, including runtime settings,
-        icon information, and version resources.
+        icon information, and version metadata.
 
     Raises:
         InspectError: If inspection fails and the native layer reports an
@@ -440,14 +586,17 @@ def inspect(executable: Pathish) -> InspectResult:
             result = inspect("dist/hello.exe")
     """
 
-    return Inspector(executable).inspect()
+    return Inspector(executable_path=executable_path, executable=executable).inspect()
 
 
 def verify(
-    script: Pathish,
-    executable: Pathish,
+    script_path: Pathish | None = None,
+    executable_path: Pathish | None = None,
     *,
     args: Iterable[str] | None = None,
+    cwd_path: Pathish | None = None,
+    script: Pathish | None = None,
+    executable: Pathish | None = None,
     cwd: Pathish | None = None,
 ) -> VerifyResult:
     """Verify a generated executable with the functional convenience API.
@@ -455,13 +604,13 @@ def verify(
     This is a thin wrapper around `Verifier(...).verify()`.
 
     Args:
-        script: Path to the original batch script used as the verification
+        script_path: Path to the original batch script used as the verification
             baseline.
-        executable: Path to the generated executable that should behave like
+        executable_path: Path to the generated executable that should behave like
             the original script.
         args: Optional command-line arguments passed to both the script and the
             executable during verification.
-        cwd: Optional working directory used for both executions.
+        cwd_path: Optional working directory used for both executions.
 
     Returns:
         VerifyResult: Execution outputs for the script and executable plus
@@ -482,4 +631,12 @@ def verify(
             )
     """
 
-    return Verifier(script, executable, args=args, cwd=cwd).verify()
+    return Verifier(
+        script_path=script_path,
+        executable_path=executable_path,
+        args=args,
+        cwd_path=cwd_path,
+        script=script,
+        executable=executable,
+        cwd=cwd,
+    ).verify()

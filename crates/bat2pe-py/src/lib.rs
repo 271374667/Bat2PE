@@ -24,11 +24,11 @@ fn serialize_json<T: serde::Serialize>(value: &T) -> PyResult<String> {
 
 #[pyfunction]
 #[pyo3(signature = (
-    input_script,
-    output_exe = None,
+    input_bat_path,
+    output_exe_path = None,
     *,
     window = "visible",
-    icon = None,
+    icon_path = None,
     company = None,
     product = None,
     description = None,
@@ -36,14 +36,14 @@ fn serialize_json<T: serde::Serialize>(value: &T) -> PyResult<String> {
     product_version = None,
     original_filename = None,
     internal_name = None,
-    stub_console = None,
-    stub_windows = None
+    stub_console_path = None,
+    stub_windows_path = None
 ))]
 fn build(
-    input_script: String,
-    output_exe: Option<String>,
+    input_bat_path: String,
+    output_exe_path: Option<String>,
     window: &str,
-    icon: Option<String>,
+    icon_path: Option<String>,
     company: Option<String>,
     product: Option<String>,
     description: Option<String>,
@@ -51,8 +51,8 @@ fn build(
     product_version: Option<String>,
     original_filename: Option<String>,
     internal_name: Option<String>,
-    stub_console: Option<String>,
-    stub_windows: Option<String>,
+    stub_console_path: Option<String>,
+    stub_windows_path: Option<String>,
 ) -> PyResult<String> {
     let mut version_info = VersionInfo::default();
     version_info.company_name = company;
@@ -70,13 +70,14 @@ fn build(
         .map_err(to_py_error)?;
 
     let request = BuildRequest {
-        input_script: PathBuf::from(input_script),
-        output_exe: output_exe.map(PathBuf::from),
+        input_bat_path: PathBuf::from(input_bat_path),
+        output_exe_path: output_exe_path.map(PathBuf::from),
         window_mode: WindowMode::from_str(window).map_err(to_py_error)?,
-        icon_path: icon.map(PathBuf::from),
+        icon_path: icon_path.map(PathBuf::from),
         version_info,
         overwrite: true,
-        stub_paths: resolve_stub_paths(stub_console, stub_windows).map_err(to_py_error)?,
+        stub_paths: resolve_stub_paths(stub_console_path, stub_windows_path)
+            .map_err(to_py_error)?,
     };
 
     let result = build_executable(&request).map_err(to_py_error)?;
@@ -112,23 +113,23 @@ fn verify_pair(
 }
 
 fn resolve_stub_paths(
-    stub_console: Option<String>,
-    stub_windows: Option<String>,
+    stub_console_path: Option<String>,
+    stub_windows_path: Option<String>,
 ) -> Result<StubPaths, Bat2PeError> {
-    let console = stub_console
+    let console = stub_console_path
         .or_else(|| std::env::var("BAT2PE_STUB_CONSOLE").ok())
         .ok_or_else(|| {
             Bat2PeError::new(
                 ERR_RESOURCE_NOT_FOUND,
-                "missing console stub path; build bat2pe-stub-console.exe with `cargo build -p bat2pe-stub-console -p bat2pe-stub-windows`, or pass stub_console / BAT2PE_STUB_CONSOLE",
+                "missing console stub path; build bat2pe-stub-console.exe with `cargo build -p bat2pe-stub-console -p bat2pe-stub-windows`, or pass stub_console_path / BAT2PE_STUB_CONSOLE",
             )
         })?;
-    let windows = stub_windows
+    let windows = stub_windows_path
         .or_else(|| std::env::var("BAT2PE_STUB_WINDOWS").ok())
         .ok_or_else(|| {
             Bat2PeError::new(
                 ERR_RESOURCE_NOT_FOUND,
-                "missing hidden-window stub path; build bat2pe-stub-windows.exe with `cargo build -p bat2pe-stub-console -p bat2pe-stub-windows`, or pass stub_windows / BAT2PE_STUB_WINDOWS",
+                "missing hidden-window stub path; build bat2pe-stub-windows.exe with `cargo build -p bat2pe-stub-console -p bat2pe-stub-windows`, or pass stub_windows_path / BAT2PE_STUB_WINDOWS",
             )
         })?;
 

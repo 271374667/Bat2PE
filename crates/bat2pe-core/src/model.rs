@@ -149,8 +149,8 @@ impl StubPaths {
 
 #[derive(Debug, Clone)]
 pub struct BuildRequest {
-    pub input_script: PathBuf,
-    pub output_exe: Option<PathBuf>,
+    pub input_bat_path: PathBuf,
+    pub output_exe_path: Option<PathBuf>,
     pub window_mode: WindowMode,
     pub icon_path: Option<PathBuf>,
     pub version_info: VersionInfo,
@@ -193,7 +193,7 @@ pub struct InspectResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuildResult {
-    pub output_exe: PathBuf,
+    pub output_exe_path: PathBuf,
     pub stub_path: PathBuf,
     pub script_encoding: ScriptEncoding,
     pub script_length: u64,

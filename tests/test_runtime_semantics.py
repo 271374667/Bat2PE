@@ -28,7 +28,7 @@ def test_runtime_preserves_dp0_and_cleans_temp_script(
     script.write_bytes(b"@echo off\r\necho dp0=%~dp0 1>&2\r\nexit /b 0\r\n")
     output = test_dir / "dp0_report.exe"
 
-    build = cli_runner("build", script, "--out", output)
+    build = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
     assert build.returncode == 0, build.stderr
 
     caller_cwd = test_dir / "caller cwd"
@@ -55,7 +55,7 @@ def test_runtime_keeps_caller_working_directory(
     script.write_bytes(b"@echo off\r\necho cwd=%CD% 1>&2\r\nexit /b 0\r\n")
     output = test_dir / "cwd_report.exe"
 
-    build = cli_runner("build", script, "--out", output)
+    build = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
     assert build.returncode == 0, build.stderr
 
     caller_cwd = test_dir / "different cwd"
@@ -80,7 +80,15 @@ def test_hidden_runtime_preserves_exit_code(
     script.write_bytes(b"@echo off\r\necho hidden mode 1>&2\r\nexit /b 3\r\n")
     output = test_dir / "hidden_exit.exe"
 
-    build = cli_runner("build", script, "--out", output, "--window", "hidden")
+    build = cli_runner(
+        "build",
+        "--input-bat-path",
+        script,
+        "--output-exe-path",
+        output,
+        "--window",
+        "hidden",
+    )
     assert build.returncode == 0, build.stderr
 
     completed = subprocess.run(
@@ -104,7 +112,7 @@ def test_runtime_cleans_legacy_stale_bat_files_on_startup(
     script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
     output = test_dir / "cleanup_legacy.exe"
 
-    build = cli_runner("build", script, "--out", output)
+    build = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
     assert build.returncode == 0, build.stderr
 
     stale_bat = output.parent / "bat2pe-4294967294-1.bat"
@@ -140,7 +148,7 @@ def test_runtime_cleans_temp_script_after_forced_termination(
     )
     output = test_dir / "forced_cleanup.exe"
 
-    build = cli_runner("build", script, "--out", output)
+    build = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
     assert build.returncode == 0, build.stderr
 
     process = subprocess.Popen(

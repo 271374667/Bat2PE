@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 from pathlib import Path
 
 import pytest
@@ -9,9 +10,22 @@ from bat2pe._errors import map_native_error
 from bat2pe._models import BuildResult
 
 
+def _extract_icon_count(executable_path: Path) -> int:
+    shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+    shell32.ExtractIconExW.argtypes = [
+        ctypes.c_wchar_p,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_uint,
+    ]
+    shell32.ExtractIconExW.restype = ctypes.c_uint
+    return int(shell32.ExtractIconExW(str(executable_path), -1, None, None, 0))
+
+
 def test_build_result_from_dict() -> None:
     payload = {
-        "output_exe": "dist/demo.exe",
+        "output_exe_path": "dist/demo.exe",
         "stub_path": "target/debug/bat2pe-stub-console.exe",
         "script_encoding": "utf8",
         "script_length": 12,
@@ -34,7 +48,7 @@ def test_build_result_from_dict() -> None:
     }
 
     result = BuildResult.from_dict(payload)
-    assert result.output_exe == Path("dist/demo.exe")
+    assert result.output_exe_path == Path("dist/demo.exe")
     assert result.inspect.runtime.temp_script_suffix == ".cmd"
 
 
@@ -79,17 +93,18 @@ def test_top_level_import_surface_and_functional_api(
 
     output.write_text("stale exe placeholder", encoding="utf-8")
     build_result = bat2pe_module.build(
-        input_script=script,
-        icon=icon,
+        input_bat_path=script,
+        icon_path=icon,
         company="Acme",
         product="Functional API",
     )
 
-    assert build_result.output_exe == output
+    assert build_result.output_exe_path == output
     inspect_result = bat2pe_module.inspect(output)
     assert inspect_result.source_script_name == "functional_api.bat"
     verify_result = bat2pe_module.verify(script, output)
     assert verify_result.success is True
+    assert _extract_icon_count(output) > 0
 
 
 def test_python_builder_inspector_verifier_roundtrip(
@@ -112,10 +127,10 @@ def test_python_builder_inspector_verifier_roundtrip(
     cwd.mkdir()
 
     builder = bat2pe_module.Builder(
-        input_script=script,
-        output_exe=output,
+        input_bat_path=script,
+        output_exe_path=output,
         window="visible",
-        icon=icon,
+        icon_path=icon,
         company="Acme",
         product="Runner",
         description="Python API test",
@@ -126,7 +141,7 @@ def test_python_builder_inspector_verifier_roundtrip(
     )
     build_result = builder.build()
 
-    assert build_result.output_exe == output
+    assert build_result.output_exe_path == output
     assert build_result.stub_path.name == "bat2pe-stub-console.exe"
     assert build_result.script_encoding == "utf8"
     assert build_result.inspect.source_extension == ".cmd"
@@ -152,6 +167,7 @@ def test_python_builder_inspector_verifier_roundtrip(
     assert f"cwd={cwd}" in verify_result.script.stderr
     assert "arg1=alpha beta" in verify_result.script.stderr
     assert "arg2=gamma" in verify_result.script.stderr
+    assert _extract_icon_count(output) > 0
 
 
 def test_python_api_raises_typed_errors(
@@ -164,8 +180,8 @@ def test_python_api_raises_typed_errors(
 
     with pytest.raises(bat2pe_module.BuildError) as build_error:
         bat2pe_module.Builder(
-            input_script=bad_script,
-            output_exe=output,
+            input_bat_path=bad_script,
+            output_exe_path=output,
         ).build()
 
     assert build_error.value.code == 101
@@ -175,8 +191,8 @@ def test_python_api_raises_typed_errors(
     unsupported.write_bytes(b"@\x00e\x00c\x00h\x00o\x00")
     with pytest.raises(bat2pe_module.BuildError) as unsupported_error:
         bat2pe_module.Builder(
-            input_script=unsupported,
-            output_exe=test_dir / "unsupported.exe",
+            input_bat_path=unsupported,
+            output_exe_path=test_dir / "unsupported.exe",
         ).build()
 
     assert unsupported_error.value.code == 102
@@ -194,8 +210,8 @@ def test_python_api_raises_typed_errors(
     empty_script.write_bytes(b"")
     with pytest.raises(bat2pe_module.BuildError) as empty_error:
         bat2pe_module.Builder(
-            input_script=empty_script,
-            output_exe=test_dir / "empty.exe",
+            input_bat_path=empty_script,
+            output_exe_path=test_dir / "empty.exe",
         ).build()
 
     assert empty_error.value.code == 100
@@ -205,8 +221,8 @@ def test_python_api_raises_typed_errors(
     real_script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
     with pytest.raises(bat2pe_module.BuildError) as version_error:
         bat2pe_module.build(
-            input_script=real_script,
-            output_exe=test_dir / "bad_version.exe",
+            input_bat_path=real_script,
+            output_exe_path=test_dir / "bad_version.exe",
             file_version="1.2.3.4",
         )
 
@@ -221,9 +237,9 @@ def test_python_builder_defaults_output_path(
     script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
     default_output = test_dir / "builder_default_output.exe"
 
-    result = bat2pe_module.Builder(input_script=script).build()
+    result = bat2pe_module.Builder(input_bat_path=script).build()
 
-    assert result.output_exe == default_output
+    assert result.output_exe_path == default_output
     assert default_output.exists()
 
 
@@ -241,8 +257,8 @@ def test_python_api_reports_missing_stub_paths(
 
     with pytest.raises(bat2pe_module.BuildError) as build_error:
         bat2pe_module.build(
-            input_script=script,
-            output_exe=test_dir / "missing_stubs.exe",
+            input_bat_path=script,
+            output_exe_path=test_dir / "missing_stubs.exe",
         )
 
     assert build_error.value.code == 103

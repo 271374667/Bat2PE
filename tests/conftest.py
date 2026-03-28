@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import struct
 import shutil
 import stat
 import subprocess
@@ -9,6 +10,7 @@ import sys
 import tempfile
 import time
 import uuid
+import zlib
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -254,4 +256,21 @@ def cli_runner(build_artifacts: BuildArtifacts):
 
 @pytest.fixture()
 def fake_ico_bytes() -> bytes:
-    return b"\x00\x00\x01\x00\x01\x00\x10\x10\x00\x00fake-icon"
+    def png_chunk(chunk_type: bytes, chunk_data: bytes) -> bytes:
+        crc = zlib.crc32(chunk_type + chunk_data) & 0xFFFFFFFF
+        return (
+            len(chunk_data).to_bytes(4, "big")
+            + chunk_type
+            + chunk_data
+            + crc.to_bytes(4, "big")
+        )
+
+    png_signature = b"\x89PNG\r\n\x1a\n"
+    ihdr = png_chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0))
+    idat = png_chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\x00"))
+    iend = png_chunk(b"IEND", b"")
+    png_bytes = png_signature + ihdr + idat + iend
+
+    icon_header = struct.pack("<HHH", 0, 1, 1)
+    icon_entry = struct.pack("<BBBBHHII", 1, 1, 0, 0, 1, 32, len(png_bytes), 22)
+    return icon_header + icon_entry + png_bytes

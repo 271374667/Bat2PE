@@ -3,6 +3,7 @@ mod error;
 mod inspect;
 mod model;
 mod overlay;
+mod resources;
 mod runtime;
 mod verify;
 

@@ -110,7 +110,7 @@ class InspectResult:
 
 @dataclass(slots=True, frozen=True)
 class BuildResult:
-    output_exe: Path
+    output_exe_path: Path
     stub_path: Path
     script_encoding: str
     script_length: int
@@ -119,14 +119,22 @@ class BuildResult:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "BuildResult":
+        output_exe_value = data.get("output_exe_path")
+        if output_exe_value is None:
+            output_exe_value = data["output_exe"]
+
         return cls(
-            output_exe=Path(data["output_exe"]),
+            output_exe_path=Path(output_exe_value),
             stub_path=Path(data["stub_path"]),
             script_encoding=str(data["script_encoding"]),
             script_length=int(data["script_length"]),
             window_mode=str(data["window_mode"]),
             inspect=InspectResult.from_dict(data["inspect"]),
         )
+
+    @property
+    def output_exe(self) -> Path:
+        return self.output_exe_path
 
 
 @dataclass(slots=True, frozen=True)
