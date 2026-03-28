@@ -250,17 +250,17 @@ mod tests {
     #[test]
     fn chooses_stub_by_window_mode() {
         let stubs = StubPaths {
-            console: "console.exe".into(),
-            windows: "windows.exe".into(),
+            console: std::path::PathBuf::from("console.exe"),
+            windows: std::path::PathBuf::from("windows.exe"),
         };
 
         assert_eq!(
             stubs.for_window_mode(WindowMode::Visible),
-            "console.exe".into()
+            std::path::PathBuf::from("console.exe")
         );
         assert_eq!(
             stubs.for_window_mode(WindowMode::Hidden),
-            "windows.exe".into()
+            std::path::PathBuf::from("windows.exe")
         );
     }
 }
