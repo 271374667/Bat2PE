@@ -34,7 +34,7 @@ fn dispatch_main() -> Result<i32> {
 fn real_main() -> Result<i32> {
     let mut args: Vec<OsString> = env::args_os().skip(1).collect();
     if args.is_empty() {
-        print_usage();
+        print_root_help();
         return Err(usage_error("missing subcommand"));
     }
 
@@ -43,11 +43,41 @@ fn real_main() -> Result<i32> {
         "build" => run_build(args),
         "inspect" => run_inspect(args),
         "verify" => run_verify(args),
-        "help" | "-h" | "--help" => {
-            print_usage();
+        "help" => run_help(args),
+        "-h" | "--help" => {
+            print_root_help();
             Ok(0)
         }
         other => Err(usage_error(format!("unknown subcommand: {other}"))),
+    }
+}
+
+fn run_help(args: Vec<OsString>) -> Result<i32> {
+    match args.as_slice() {
+        [] => {
+            print_root_help();
+            Ok(0)
+        }
+        [topic] => match topic.to_string_lossy().as_ref() {
+            "build" => {
+                print_build_help();
+                Ok(0)
+            }
+            "inspect" => {
+                print_inspect_help();
+                Ok(0)
+            }
+            "verify" => {
+                print_verify_help();
+                Ok(0)
+            }
+            "-h" | "--help" => {
+                print_root_help();
+                Ok(0)
+            }
+            other => Err(usage_error(format!("unknown help topic: {other}"))),
+        },
+        _ => Err(usage_error("help accepts at most one command name")),
     }
 }
 
@@ -65,6 +95,10 @@ fn run_build(args: Vec<OsString>) -> Result<i32> {
     while index < args.len() {
         let key = args[index].to_string_lossy();
         match key.as_ref() {
+            "-h" | "--help" => {
+                print_build_help();
+                return Ok(0);
+            }
             "--input-bat-path" => {
                 input_bat_path = Some(expect_path_value(&args, index + 1, "--input-bat-path")?);
                 index += 2;
@@ -176,6 +210,10 @@ fn run_inspect(args: Vec<OsString>) -> Result<i32> {
     while index < args.len() {
         let key = args[index].to_string_lossy();
         match key.as_ref() {
+            "-h" | "--help" => {
+                print_inspect_help();
+                return Ok(0);
+            }
             "--exe-path" => {
                 executable_path = Some(expect_path_value(&args, index + 1, "--exe-path")?);
                 index += 2;
@@ -224,6 +262,10 @@ fn run_verify(args: Vec<OsString>) -> Result<i32> {
     while index < args.len() {
         let key = args[index].to_string_lossy();
         match key.as_ref() {
+            "-h" | "--help" => {
+                print_verify_help();
+                return Ok(0);
+            }
             "--script-path" | "--script" => {
                 script_path = Some(expect_path_value(&args, index + 1, &key)?);
                 index += 2;
@@ -318,27 +360,180 @@ fn usage_error(message: impl Into<String>) -> Bat2PeError {
     Bat2PeError::new(ERR_CLI_USAGE, message)
 }
 
-fn print_usage() {
-    println!(
-        "\
-bat2pe build --input-bat-path <input.bat|input.cmd> [--output-exe-path <output.exe>] [options]
-bat2pe inspect --exe-path <output.exe> [--quiet|--verbose]
-bat2pe verify --script-path <input.bat|input.cmd> --exe-path <output.exe> [--cwd-path PATH] [--arg VALUE ...]
+fn print_root_help() {
+    println!("{}", root_help_text());
+}
 
-Build options:
-  --icon-path PATH
+fn print_build_help() {
+    println!("{}", build_help_text());
+}
+
+fn print_inspect_help() {
+    println!("{}", inspect_help_text());
+}
+
+fn print_verify_help() {
+    println!("{}", verify_help_text());
+}
+
+fn root_help_text() -> &'static str {
+    r#"Bat2PE CLI
+
+Convert .bat/.cmd scripts into standalone .exe files, inspect generated payload metadata, and verify that a generated executable still behaves like the original script.
+
+Usage:
+  bat2pe <COMMAND> [OPTIONS]
+  bat2pe help [COMMAND]
+
+Commands:
+  build      Convert a .bat or .cmd script into an executable.
+  inspect    Read embedded bat2pe metadata from a generated executable.
+  verify     Run the script and executable and compare exit code plus stderr.
+  help       Show the root help or the help for a specific command.
+
+Options:
+  -h, --help  Show this help.
+
+Examples:
+  bat2pe build run.bat
+  bat2pe build run.cmd --output-exe-path dist\run.exe --window hidden
+  bat2pe inspect run.exe
+  bat2pe verify --script-path run.bat --exe-path run.exe --arg alpha --arg beta
+  bat2pe help build
+
+Use "bat2pe <COMMAND> --help" for command-specific help."#
+}
+
+fn build_help_text() -> &'static str {
+    r#"Build Command
+
+Convert one .bat/.cmd script into a standalone Windows executable.
+
+Usage:
+  bat2pe build <INPUT_BAT_PATH> [OPTIONS]
+  bat2pe build --input-bat-path <INPUT_BAT_PATH> [OPTIONS]
+
+Arguments:
+  <INPUT_BAT_PATH>
+      Input batch script. This positional form is equivalent to --input-bat-path.
+
+Options:
+  --input-bat-path PATH
+      Explicit input script path. Must end with .bat or .cmd.
+  --output-exe-path, --out PATH
+      Output executable path. If omitted, bat2pe writes <script-stem>.exe beside
+      the input script and overwrites any existing file at that path.
+  --icon-path, --icon PATH
+      Optional .ico file to embed into the generated executable.
   --company TEXT
+      CompanyName field written into the Windows version resource.
   --product TEXT
+      ProductName field written into the Windows version resource.
   --description TEXT
+      FileDescription field written into the Windows version resource.
   --file-version X.Y.Z
+      FileVersion triplet written into the Windows version resource.
   --product-version X.Y.Z
+      ProductVersion triplet written into the Windows version resource.
   --original-filename TEXT
+      OriginalFilename field stored in metadata and the Windows version resource.
+      Defaults to the generated output file name when omitted.
   --internal-name TEXT
+      InternalName field stored in metadata and the Windows version resource.
+      Defaults to the generated output file stem when omitted.
   --window visible|hidden
+      visible keeps a console subsystem. hidden builds a GUI subsystem and
+      suppresses the console unless the process can attach to a parent console.
   --uac
+      Write a requireAdministrator execution level into the generated manifest.
+      Without this flag, the executable uses asInvoker.
   --quiet
-  --verbose"
-    );
+      Suppress the JSON success output.
+  --verbose
+      Reserved verbose switch. Currently prints the same JSON payload as the
+      default mode. Cannot be used together with --quiet.
+  -h, --help
+      Show this help.
+
+Examples:
+  bat2pe build run.bat
+  bat2pe build --input-bat-path run.cmd --output-exe-path dist\run.exe
+  bat2pe build run.bat --icon-path app.ico --company Acme --product Runner
+  bat2pe build run.bat --window hidden
+  bat2pe build admin.cmd --uac"#
+}
+
+fn inspect_help_text() -> &'static str {
+    r#"Inspect Command
+
+Read bat2pe payload metadata back out of a generated executable.
+
+Usage:
+  bat2pe inspect <EXE_PATH> [OPTIONS]
+  bat2pe inspect --exe-path <EXE_PATH> [OPTIONS]
+
+Arguments:
+  <EXE_PATH>
+      Generated executable path. This positional form is equivalent to --exe-path.
+
+Options:
+  --exe-path PATH
+      Path to the generated executable to inspect.
+  --quiet
+      Suppress the JSON success output.
+  --verbose
+      Reserved verbose switch. Currently prints the same JSON payload as the
+      default mode. Cannot be used together with --quiet.
+  -h, --help
+      Show this help.
+
+Examples:
+  bat2pe inspect run.exe
+  bat2pe inspect --exe-path dist\run.exe"#
+}
+
+fn verify_help_text() -> &'static str {
+    r#"Verify Command
+
+Run the original script and the generated executable, then compare exit code
+and stderr to catch behavior regressions.
+
+Usage:
+  bat2pe verify --script-path <SCRIPT_PATH> --exe-path <EXE_PATH> [OPTIONS] [-- ARGUMENTS...]
+
+Arguments:
+  none
+      verify only accepts named options before --.
+
+Options:
+  --script-path, --script PATH
+      Original .bat/.cmd script used for the baseline run.
+  --exe-path, --exe PATH
+      Generated executable used for the comparison run.
+  --cwd-path, --cwd PATH
+      Optional working directory applied to both runs.
+  --arg VALUE
+      Forward one argument to both runs. Repeat this option for multiple values.
+  --
+      Treat all remaining tokens as passthrough arguments, even if they start
+      with -.
+  --quiet
+      Suppress the JSON result output.
+  --verbose
+      Reserved verbose switch. Currently prints the same JSON payload as the
+      default mode. Cannot be used together with --quiet.
+  -h, --help
+      Show this help.
+
+Notes:
+  verify does not support UAC-enabled executables because Windows elevation is
+  interactive.
+
+Examples:
+  bat2pe verify --script-path run.bat --exe-path run.exe
+  bat2pe verify --script-path run.bat --exe-path run.exe --cwd-path dist
+  bat2pe verify --script-path run.bat --exe-path run.exe --arg alpha --arg beta
+  bat2pe verify --script-path run.bat --exe-path run.exe -- --flag-like-value"#
 }
 
 enum Verbosity {

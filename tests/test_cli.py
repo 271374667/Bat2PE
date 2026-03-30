@@ -159,11 +159,41 @@ def _read_fixed_version(executable_path: Path, kind: str) -> tuple[int, int, int
 
 
 def test_cli_help_smoke(cli_runner) -> None:
-    completed = cli_runner("help")
+    completed = cli_runner("--help")
+    help_subcommand = cli_runner("help")
 
     assert completed.returncode == 0
-    assert "bat2pe build" in completed.stdout
-    assert "bat2pe verify" in completed.stdout
+    assert help_subcommand.returncode == 0
+    assert help_subcommand.stdout == completed.stdout
+    assert "Bat2PE CLI" in completed.stdout
+    assert 'Use "bat2pe <COMMAND> --help" for command-specific help.' in completed.stdout
+    assert "bat2pe build run.bat" in completed.stdout
+    assert "bat2pe verify --script-path run.bat --exe-path run.exe" in completed.stdout
+
+
+def test_cli_subcommand_help_is_specific(cli_runner) -> None:
+    build_help = cli_runner("build", "--help")
+    assert build_help.returncode == 0
+    assert "Build Command" in build_help.stdout
+    assert "--input-bat-path PATH" in build_help.stdout
+    assert "build run.bat --window hidden" in build_help.stdout
+
+    build_help_alias = cli_runner("help", "build")
+    assert build_help_alias.returncode == 0
+    assert build_help_alias.stdout == build_help.stdout
+
+    inspect_help = cli_runner("inspect", "--help")
+    assert inspect_help.returncode == 0
+    assert "Inspect Command" in inspect_help.stdout
+    assert "--exe-path PATH" in inspect_help.stdout
+    assert "--input-bat-path PATH" not in inspect_help.stdout
+
+    verify_help = cli_runner("verify", "--help")
+    assert verify_help.returncode == 0
+    assert "Verify Command" in verify_help.stdout
+    assert "--script-path, --script PATH" in verify_help.stdout
+    assert "verify only accepts named options before --." in verify_help.stdout
+    assert "--arg VALUE" in verify_help.stdout
 
 
 def test_cli_reports_usage_errors(cli_runner, test_dir: Path) -> None:
@@ -323,6 +353,10 @@ def test_cli_defaults_output_path_and_overwrites_existing_file(
     inspect_payload = json.loads(inspect.stdout)
     assert inspect_payload["source_script_name"] == "default_output.cmd"
     assert inspect_payload["runtime"]["uac"] is False
+    assert inspect_payload["version_info"]["original_filename"] == "default_output.exe"
+    assert inspect_payload["version_info"]["internal_name"] == "default_output"
+    assert _read_version_string(default_output, "OriginalFilename") == "default_output.exe"
+    assert _read_version_string(default_output, "InternalName") == "default_output"
     assert _extract_execution_level(default_output) == "asInvoker"
 
 

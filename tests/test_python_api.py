@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import inspect as pyinspect
 from pathlib import Path
 
 import pytest
@@ -255,6 +256,65 @@ def test_top_level_import_surface_and_functional_api(
     assert _extract_execution_level(output) == "asInvoker"
 
 
+def test_python_build_api_uses_canonical_output_and_icon_names(
+    bat2pe_module,
+    test_dir: Path,
+) -> None:
+    script = test_dir / "canonical_names.bat"
+    script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
+
+    build_signature = pyinspect.signature(bat2pe_module.build)
+    builder_signature = pyinspect.signature(bat2pe_module.Builder)
+
+    assert "output_exe_path" in build_signature.parameters
+    assert "icon_path" in build_signature.parameters
+    assert "output_exe" not in build_signature.parameters
+    assert "icon" not in build_signature.parameters
+    assert "output_exe_path" in builder_signature.parameters
+    assert "icon_path" in builder_signature.parameters
+    assert "output_exe" not in builder_signature.parameters
+    assert "icon" not in builder_signature.parameters
+
+    builder = bat2pe_module.Builder(input_bat_path=script)
+    assert not hasattr(builder, "output_exe")
+    assert not hasattr(builder, "icon")
+
+
+def test_python_build_api_rejects_removed_output_and_icon_aliases(
+    bat2pe_module,
+    test_dir: Path,
+) -> None:
+    script = test_dir / "removed_aliases.bat"
+    script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
+    output = test_dir / "removed_aliases.exe"
+    icon = test_dir / "removed_aliases.ico"
+    icon.write_bytes(b"placeholder")
+
+    with pytest.raises(TypeError, match="output_exe"):
+        bat2pe_module.build(
+            input_bat_path=script,
+            output_exe=output,
+        )
+
+    with pytest.raises(TypeError, match="icon"):
+        bat2pe_module.build(
+            input_bat_path=script,
+            icon=icon,
+        )
+
+    with pytest.raises(TypeError, match="output_exe"):
+        bat2pe_module.Builder(
+            input_bat_path=script,
+            output_exe=output,
+        )
+
+    with pytest.raises(TypeError, match="icon"):
+        bat2pe_module.Builder(
+            input_bat_path=script,
+            icon=icon,
+        )
+
+
 def test_python_builder_inspector_verifier_roundtrip(
     bat2pe_module,
     fake_ico_bytes: bytes,
@@ -476,6 +536,10 @@ def test_python_builder_defaults_output_path(
 
     assert result.output_exe_path == default_output
     assert default_output.exists()
+    assert result.inspect.version_info.original_filename == "builder_default_output.exe"
+    assert result.inspect.version_info.internal_name == "builder_default_output"
+    assert _read_version_string(default_output, "OriginalFilename") == "builder_default_output.exe"
+    assert _read_version_string(default_output, "InternalName") == "builder_default_output"
 
 
 def test_python_builder_creates_missing_output_parent_directory(

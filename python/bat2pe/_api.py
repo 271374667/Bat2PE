@@ -126,8 +126,6 @@ class Builder:
         product_version: str | None = None,
         original_filename: str | None = None,
         internal_name: str | None = None,
-        output_exe: Pathish | None = None,
-        icon: Pathish | None = None,
     ) -> None:
         """Initialize a build request.
 
@@ -148,34 +146,23 @@ class Builder:
             product_version: Optional product version string written into
                 version metadata.
             original_filename: Optional original filename recorded in version
-                metadata.
-            internal_name: Optional internal name recorded in version metadata.
+                metadata. Defaults to the generated output file name when omitted.
+            internal_name: Optional internal name recorded in version
+                metadata. Defaults to the generated output file stem when omitted.
         """
 
-        resolved_output_exe_path = _resolve_alias(
-            output_exe_path,
-            output_exe,
-            preferred_name="output_exe_path",
-            legacy_name="output_exe",
-        )
-        resolved_icon_path = _resolve_alias(
-            icon_path,
-            icon,
-            preferred_name="icon_path",
-            legacy_name="icon",
-        )
         self.input_bat_path = _validate_existing_file_path(
             input_bat_path,
             arg_name="input_bat_path",
         )
         self.output_exe_path = (
-            Path(resolved_output_exe_path) if resolved_output_exe_path is not None else None
+            Path(output_exe_path) if output_exe_path is not None else None
         )
         self.visible = _coerce_bool_flag(visible, arg_name="visible")
         self.uac = uac
         self.icon_path = (
-            _validate_existing_file_path(resolved_icon_path, arg_name="icon_path")
-            if resolved_icon_path is not None
+            _validate_existing_file_path(icon_path, arg_name="icon_path")
+            if icon_path is not None
             else None
         )
         self.company_name = company_name
@@ -189,14 +176,6 @@ class Builder:
     @property
     def input_script(self) -> Path:
         return self.input_bat_path
-
-    @property
-    def output_exe(self) -> Path | None:
-        return self.output_exe_path
-
-    @property
-    def icon(self) -> Path | None:
-        return self.icon_path
 
     def build(self) -> BuildResult:
         """Build an executable from the options stored on this instance.
@@ -437,8 +416,6 @@ def build(
     product_version: str | None = None,
     original_filename: str | None = None,
     internal_name: str | None = None,
-    output_exe: Pathish | None = None,
-    icon: Pathish | None = None,
 ) -> BuildResult:
     """Build an executable with the functional convenience API.
 
@@ -460,8 +437,9 @@ def build(
         product_version: Optional product version string written into version
             metadata.
         original_filename: Optional original filename recorded in version
-            metadata.
-        internal_name: Optional internal name recorded in version metadata.
+            metadata. Defaults to the generated output file name when omitted.
+        internal_name: Optional internal name recorded in version
+            metadata. Defaults to the generated output file stem when omitted.
 
     Returns:
         BuildResult: Build metadata plus an inspection snapshot of the
@@ -495,8 +473,6 @@ def build(
         product_version=product_version,
         original_filename=original_filename,
         internal_name=internal_name,
-        output_exe=output_exe,
-        icon=icon,
     ).build()
 
 

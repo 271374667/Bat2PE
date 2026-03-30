@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 
@@ -91,6 +92,7 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
         .output_exe_path
         .clone()
         .unwrap_or(derive_output_exe_path(&request.input_bat_path)?);
+    let version_info = resolved_version_info(&request.version_info, &output_exe_path);
 
     if let TemplateExecutable::Path(path) = &request.template_executable {
         if !path.exists() {
@@ -120,7 +122,7 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
 
     apply_executable_subsystem(&output_exe_path, request.window_mode)?;
     apply_execution_level_manifest(&output_exe_path, request.uac)?;
-    apply_version_resource(&output_exe_path, &request.version_info)?;
+    apply_version_resource(&output_exe_path, &version_info)?;
     if let Some(icon_path) = request.icon_path.as_deref() {
         apply_icon_resource(&output_exe_path, icon_path)?;
     }
@@ -142,7 +144,7 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
             uac: request.uac,
         },
         icon,
-        version_info: request.version_info.clone(),
+        version_info: version_info.clone(),
     };
 
     write_payload_resources(&output_exe_path, &metadata, &script_bytes)?;
@@ -157,6 +159,28 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
         uac: request.uac,
         inspect,
     })
+}
+
+fn resolved_version_info(
+    version_info: &crate::model::VersionInfo,
+    output_exe_path: &Path,
+) -> crate::model::VersionInfo {
+    let mut resolved = version_info.clone();
+
+    if resolved.original_filename.is_none() {
+        resolved.original_filename = path_component_to_string(output_exe_path.file_name());
+    }
+
+    if resolved.internal_name.is_none() {
+        resolved.internal_name = path_component_to_string(output_exe_path.file_stem());
+    }
+
+    resolved
+}
+
+fn path_component_to_string(component: Option<&OsStr>) -> Option<String> {
+    let value = component?.to_string_lossy().to_string();
+    if value.is_empty() { None } else { Some(value) }
 }
 
 fn write_template_executable(
@@ -222,6 +246,7 @@ fn load_icon_info(path: &Path) -> Result<IconInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::VersionInfo;
 
     #[test]
     fn detects_utf8_bom() {
@@ -252,5 +277,37 @@ mod tests {
     fn derives_default_output_path() {
         let output = derive_output_exe_path(Path::new(r"G:\demo\run.cmd")).expect("output path");
         assert_eq!(output, std::path::PathBuf::from(r"G:\demo\run.exe"));
+    }
+
+    #[test]
+    fn fills_version_names_from_output_path_when_missing() {
+        let version_info = resolved_version_info(
+            &VersionInfo::default(),
+            Path::new(r"G:\demo\release\launcher.exe"),
+        );
+
+        assert_eq!(
+            version_info.original_filename.as_deref(),
+            Some("launcher.exe")
+        );
+        assert_eq!(version_info.internal_name.as_deref(), Some("launcher"));
+    }
+
+    #[test]
+    fn preserves_explicit_version_name_overrides() {
+        let version_info = resolved_version_info(
+            &VersionInfo {
+                original_filename: Some("custom.exe".to_string()),
+                internal_name: Some("custom-name".to_string()),
+                ..VersionInfo::default()
+            },
+            Path::new(r"G:\demo\release\launcher.exe"),
+        );
+
+        assert_eq!(
+            version_info.original_filename.as_deref(),
+            Some("custom.exe")
+        );
+        assert_eq!(version_info.internal_name.as_deref(), Some("custom-name"));
     }
 }
