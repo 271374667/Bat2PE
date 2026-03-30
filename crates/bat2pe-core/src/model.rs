@@ -120,6 +120,8 @@ pub struct RuntimeConfig {
     pub window_mode: WindowMode,
     pub temp_script_suffix: String,
     pub strict_dp0: bool,
+    #[serde(default)]
+    pub uac: bool,
 }
 
 impl Default for RuntimeConfig {
@@ -128,6 +130,7 @@ impl Default for RuntimeConfig {
             window_mode: WindowMode::Visible,
             temp_script_suffix: ".cmd".to_string(),
             strict_dp0: true,
+            uac: false,
         }
     }
 }
@@ -152,6 +155,7 @@ pub struct BuildRequest {
     pub input_bat_path: PathBuf,
     pub output_exe_path: Option<PathBuf>,
     pub window_mode: WindowMode,
+    pub uac: bool,
     pub icon_path: Option<PathBuf>,
     pub version_info: VersionInfo,
     pub overwrite: bool,
@@ -198,6 +202,8 @@ pub struct BuildResult {
     pub script_encoding: ScriptEncoding,
     pub script_length: u64,
     pub window_mode: WindowMode,
+    #[serde(default)]
+    pub uac: bool,
     pub inspect: InspectResult,
 }
 

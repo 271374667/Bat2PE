@@ -11,7 +11,7 @@ use crate::model::{
     BuildRequest, BuildResult, EmbeddedMetadata, IconInfo, RuntimeConfig, ScriptEncoding, StubPaths,
 };
 use crate::overlay::append_overlay;
-use crate::resources::apply_icon_resource;
+use crate::resources::{apply_execution_level_manifest, apply_icon_resource};
 
 const OVERLAY_SCHEMA_VERSION: u32 = 1;
 
@@ -132,6 +132,7 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
     if let Some(icon_path) = request.icon_path.as_deref() {
         apply_icon_resource(&output_exe_path, icon_path)?;
     }
+    apply_execution_level_manifest(&output_exe_path, request.uac)?;
 
     let metadata = EmbeddedMetadata {
         schema_version: OVERLAY_SCHEMA_VERSION,
@@ -147,6 +148,7 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
             window_mode: request.window_mode,
             temp_script_suffix: ".cmd".to_string(),
             strict_dp0: true,
+            uac: request.uac,
         },
         icon,
         version_info: request.version_info.clone(),
@@ -168,6 +170,7 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
         script_encoding,
         script_length: script_bytes.len() as u64,
         window_mode: request.window_mode,
+        uac: request.uac,
         inspect,
     })
 }

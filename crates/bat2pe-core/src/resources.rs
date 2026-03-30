@@ -5,7 +5,27 @@ use crate::error::{Bat2PeError, ERR_INVALID_INPUT, ERR_IO, Result};
 
 const RT_ICON: u16 = 3;
 const RT_GROUP_ICON: u16 = 14;
+const RT_MANIFEST: u16 = 24;
 const GROUP_ICON_RESOURCE_ID: u16 = 1;
+const MANIFEST_RESOURCE_ID: u16 = 1;
+const AS_INVOKER_MANIFEST: &str = concat!(
+    "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
+    "<assembly xmlns=\"urn:schemas-microsoft-com:asm.v1\" manifestVersion=\"1.0\">",
+    "<trustInfo xmlns=\"urn:schemas-microsoft-com:asm.v3\">",
+    "<security><requestedPrivileges>",
+    "<requestedExecutionLevel level=\"asInvoker\" uiAccess=\"false\"/>",
+    "</requestedPrivileges></security>",
+    "</trustInfo></assembly>",
+);
+const REQUIRE_ADMINISTRATOR_MANIFEST: &str = concat!(
+    "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
+    "<assembly xmlns=\"urn:schemas-microsoft-com:asm.v1\" manifestVersion=\"1.0\">",
+    "<trustInfo xmlns=\"urn:schemas-microsoft-com:asm.v3\">",
+    "<security><requestedPrivileges>",
+    "<requestedExecutionLevel level=\"requireAdministrator\" uiAccess=\"false\"/>",
+    "</requestedPrivileges></security>",
+    "</trustInfo></assembly>",
+);
 
 #[derive(Debug)]
 struct ParsedIcoImage {
@@ -27,6 +47,11 @@ pub fn apply_icon_resource(executable_path: &Path, icon_path: &Path) -> Result<(
     let icon_bytes = fs::read(icon_path).map_err(|error| Bat2PeError::io(icon_path, &error))?;
     let parsed = ParsedIcoFile::parse(icon_path, &icon_bytes)?;
     apply_icon_resource_from_parsed(executable_path, &parsed)
+}
+
+pub fn apply_execution_level_manifest(executable_path: &Path, uac: bool) -> Result<()> {
+    let manifest = execution_level_manifest_bytes(uac);
+    apply_manifest_resource(executable_path, manifest)
 }
 
 impl ParsedIcoFile {
@@ -161,6 +186,76 @@ fn read_u32(bytes: &[u8], offset: usize) -> Result<u32> {
     Ok(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
 }
 
+fn execution_level_manifest_bytes(uac: bool) -> &'static [u8] {
+    if uac {
+        REQUIRE_ADMINISTRATOR_MANIFEST.as_bytes()
+    } else {
+        AS_INVOKER_MANIFEST.as_bytes()
+    }
+}
+
+#[cfg(windows)]
+fn apply_manifest_resource(executable_path: &Path, manifest: &[u8]) -> Result<()> {
+    use windows_sys::Win32::System::LibraryLoader::{
+        BeginUpdateResourceW, EndUpdateResourceW, UpdateResourceW,
+    };
+
+    let executable_path_wide = to_wide(executable_path);
+    let update_handle = unsafe { BeginUpdateResourceW(executable_path_wide.as_ptr(), 0) };
+    if update_handle.is_null() {
+        return Err(win32_error(
+            executable_path,
+            "failed to begin updating executable resources",
+        ));
+    }
+
+    let update_result = (|| {
+        let manifest_size: u32 = manifest
+            .len()
+            .try_into()
+            .map_err(|_| Bat2PeError::new(ERR_INVALID_INPUT, "manifest resource is too large"))?;
+
+        let updated = unsafe {
+            UpdateResourceW(
+                update_handle,
+                make_int_resource(RT_MANIFEST),
+                make_int_resource(MANIFEST_RESOURCE_ID),
+                0,
+                manifest.as_ptr().cast_mut().cast(),
+                manifest_size,
+            )
+        };
+        if updated == 0 {
+            return Err(win32_error(
+                executable_path,
+                "failed to write execution manifest resource",
+            ));
+        }
+
+        Ok(())
+    })();
+
+    let discard_changes = i32::from(update_result.is_err());
+    let finalized = unsafe { EndUpdateResourceW(update_handle, discard_changes) };
+    if finalized == 0 {
+        let finalize_error =
+            win32_error(executable_path, "failed to finalize executable resources");
+        if update_result.is_ok() {
+            return Err(finalize_error);
+        }
+    }
+
+    update_result
+}
+
+#[cfg(not(windows))]
+fn apply_manifest_resource(_executable_path: &Path, _manifest: &[u8]) -> Result<()> {
+    Err(Bat2PeError::new(
+        ERR_INVALID_INPUT,
+        "manifest resource updates are only supported on Windows",
+    ))
+}
+
 #[cfg(windows)]
 fn apply_icon_resource_from_parsed(executable_path: &Path, parsed: &ParsedIcoFile) -> Result<()> {
     use windows_sys::Win32::System::LibraryLoader::{
@@ -271,4 +366,25 @@ fn win32_error(path: &Path, message: impl Into<String>) -> Bat2PeError {
     Bat2PeError::new(ERR_IO, message)
         .with_path(path.to_path_buf())
         .with_details(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::execution_level_manifest_bytes;
+
+    #[test]
+    fn uses_as_invoker_manifest_when_uac_is_disabled() {
+        let manifest = String::from_utf8(execution_level_manifest_bytes(false).to_vec())
+            .expect("manifest should be utf-8");
+        assert!(manifest.contains("requestedExecutionLevel"));
+        assert!(manifest.contains("asInvoker"));
+    }
+
+    #[test]
+    fn uses_require_administrator_manifest_when_uac_is_enabled() {
+        let manifest = String::from_utf8(execution_level_manifest_bytes(true).to_vec())
+            .expect("manifest should be utf-8");
+        assert!(manifest.contains("requestedExecutionLevel"));
+        assert!(manifest.contains("requireAdministrator"));
+    }
 }

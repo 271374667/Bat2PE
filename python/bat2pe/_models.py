@@ -71,6 +71,7 @@ class RuntimeConfig:
     window_mode: str
     temp_script_suffix: str
     strict_dp0: bool
+    uac: bool
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "RuntimeConfig":
@@ -78,6 +79,7 @@ class RuntimeConfig:
             window_mode=str(data["window_mode"]),
             temp_script_suffix=str(data["temp_script_suffix"]),
             strict_dp0=bool(data["strict_dp0"]),
+            uac=bool(data.get("uac", False)),
         )
 
 
@@ -115,6 +117,7 @@ class BuildResult:
     script_encoding: str
     script_length: int
     window_mode: str
+    uac: bool
     inspect: InspectResult
 
     @classmethod
@@ -129,6 +132,7 @@ class BuildResult:
             script_encoding=str(data["script_encoding"]),
             script_length=int(data["script_length"]),
             window_mode=str(data["window_mode"]),
+            uac=bool(data.get("uac", False)),
             inspect=InspectResult.from_dict(data["inspect"]),
         )
 

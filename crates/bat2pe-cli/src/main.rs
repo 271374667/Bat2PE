@@ -48,6 +48,7 @@ fn run_build(args: Vec<OsString>) -> Result<i32> {
     let mut icon_path: Option<PathBuf> = None;
     let mut version_info = VersionInfo::default();
     let mut window_mode = WindowMode::Visible;
+    let mut uac = false;
     let mut quiet = false;
     let mut verbose = false;
 
@@ -110,6 +111,10 @@ fn run_build(args: Vec<OsString>) -> Result<i32> {
                 window_mode = WindowMode::from_str(&value)?;
                 index += 2;
             }
+            "--uac" => {
+                uac = true;
+                index += 1;
+            }
             "--quiet" => {
                 quiet = true;
                 index += 1;
@@ -137,6 +142,7 @@ fn run_build(args: Vec<OsString>) -> Result<i32> {
         input_bat_path: input_bat_path.ok_or_else(|| usage_error("missing input bat path"))?,
         output_exe_path,
         window_mode,
+        uac,
         icon_path,
         version_info,
         overwrite: true,
@@ -319,6 +325,7 @@ Build options:
   --original-filename TEXT
   --internal-name TEXT
   --window visible|hidden
+  --uac
   --quiet
   --verbose"
     );

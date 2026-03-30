@@ -131,6 +131,7 @@ class Builder:
         input_bat_path: Pathish | None = None,
         output_exe_path: Pathish | None = None,
         window: str = "visible",
+        uac: bool = False,
         icon_path: Pathish | None = None,
         company: str | None = None,
         product: str | None = None,
@@ -213,6 +214,7 @@ class Builder:
             Path(resolved_output_exe_path) if resolved_output_exe_path is not None else None
         )
         self.window = window
+        self.uac = uac
         self.icon_path = Path(resolved_icon_path) if resolved_icon_path is not None else None
         self.company = company
         self.product = product
@@ -274,6 +276,7 @@ class Builder:
                 if self.output_exe_path is not None
                 else None,
                 window=self.window,
+                uac=self.uac,
                 icon_path=_normalize_path(self.icon_path) if self.icon_path is not None else None,
                 company=self.company,
                 product=self.product,
@@ -478,6 +481,7 @@ def build(
     input_bat_path: Pathish | None = None,
     output_exe_path: Pathish | None = None,
     window: str = "visible",
+    uac: bool = False,
     icon_path: Pathish | None = None,
     company: str | None = None,
     product: str | None = None,
@@ -542,6 +546,7 @@ def build(
         input_bat_path=input_bat_path,
         output_exe_path=output_exe_path,
         window=window,
+        uac=uac,
         icon_path=icon_path,
         company=company,
         product=product,

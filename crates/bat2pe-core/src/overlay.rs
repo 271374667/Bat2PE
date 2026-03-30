@@ -125,6 +125,7 @@ mod tests {
                 window_mode: WindowMode::Hidden,
                 temp_script_suffix: ".cmd".to_string(),
                 strict_dp0: true,
+                uac: false,
             },
             icon: None,
             version_info: VersionInfo::default(),

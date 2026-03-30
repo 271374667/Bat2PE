@@ -12,6 +12,7 @@ pub const ERR_DIRECTORY_NOT_WRITABLE: u32 = 105;
 pub const ERR_IO: u32 = 106;
 pub const ERR_CLI_USAGE: u32 = 107;
 pub const ERR_VERIFY_MISMATCH: u32 = 108;
+pub const ERR_VERIFY_UAC_INTERACTIVE: u32 = 109;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Bat2PeError {

@@ -1,10 +1,20 @@
 use std::path::Path;
 use std::process::{Command, Output};
 
-use crate::error::{Bat2PeError, Result};
+use crate::error::{Bat2PeError, ERR_VERIFY_UAC_INTERACTIVE, Result};
+use crate::inspect::inspect_executable;
 use crate::model::{VerifyExecution, VerifyRequest, VerifyResult};
 
 pub fn verify(request: &VerifyRequest) -> Result<VerifyResult> {
+    let inspect = inspect_executable(&request.exe_path)?;
+    if inspect.runtime.uac {
+        return Err(Bat2PeError::new(
+            ERR_VERIFY_UAC_INTERACTIVE,
+            "verify does not support uac-enabled executables because Windows elevation is interactive",
+        )
+        .with_path(request.exe_path.clone()));
+    }
+
     let script_output = run_script(request)?;
     let exe_output = run_executable(request)?;
 
