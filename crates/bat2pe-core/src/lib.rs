@@ -8,7 +8,7 @@ mod runtime;
 mod verify;
 
 pub use build::{
-    build_executable, derive_output_exe_path, detect_script_encoding, locate_stub_binaries,
+    build_executable, derive_output_exe_path, detect_script_encoding, locate_template_executable,
     read_script_bytes,
 };
 pub use error::{
@@ -19,8 +19,8 @@ pub use error::{
 pub use inspect::inspect_executable;
 pub use model::{
     BuildRequest, BuildResult, EmbeddedMetadata, IconInfo, InspectResult, RuntimeConfig,
-    ScriptEncoding, StubPaths, VerifyExecution, VerifyRequest, VerifyResult, VersionInfo,
-    VersionTriplet, WindowMode,
+    ScriptEncoding, VerifyExecution, VerifyRequest, VerifyResult, VersionInfo, VersionTriplet,
+    WindowMode,
 };
-pub use runtime::{run_console_stub, run_windows_stub};
+pub use runtime::{maybe_run_current_executable, run_console_stub, run_windows_stub};
 pub use verify::verify;

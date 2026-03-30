@@ -7,39 +7,26 @@ use crate::error::{
 };
 use crate::inspect::inspect_executable;
 use crate::model::{
-    BuildRequest, BuildResult, EmbeddedMetadata, IconInfo, RuntimeConfig, ScriptEncoding, StubPaths,
+    BuildRequest, BuildResult, EmbeddedMetadata, IconInfo, RuntimeConfig, ScriptEncoding,
 };
 use crate::overlay::write_payload_resources;
 use crate::resources::{
-    apply_execution_level_manifest, apply_icon_resource, apply_version_resource,
+    apply_executable_subsystem, apply_execution_level_manifest, apply_icon_resource,
+    apply_version_resource,
 };
 
 const OVERLAY_SCHEMA_VERSION: u32 = 1;
 
-pub fn locate_stub_binaries(executable: &Path) -> Result<StubPaths> {
-    let directory = executable.parent().ok_or_else(|| {
-        Bat2PeError::new(ERR_RESOURCE_NOT_FOUND, "failed to locate CLI directory")
-            .with_path(executable.to_path_buf())
-    })?;
-
-    let console = directory.join("bat2pe-stub-console.exe");
-    let windows = directory.join("bat2pe-stub-windows.exe");
-
-    if !console.exists() {
-        return Err(
-            Bat2PeError::new(ERR_RESOURCE_NOT_FOUND, "missing console runtime stub")
-                .with_path(console),
-        );
+pub fn locate_template_executable(executable: &Path) -> Result<std::path::PathBuf> {
+    if executable.exists() {
+        return Ok(executable.to_path_buf());
     }
 
-    if !windows.exists() {
-        return Err(
-            Bat2PeError::new(ERR_RESOURCE_NOT_FOUND, "missing hidden-window runtime stub")
-                .with_path(windows),
-        );
-    }
-
-    Ok(StubPaths { console, windows })
+    Err(Bat2PeError::new(
+        ERR_RESOURCE_NOT_FOUND,
+        "bat2pe template executable was not found",
+    )
+    .with_path(executable.to_path_buf()))
 }
 
 pub fn detect_script_encoding(bytes: &[u8]) -> Result<ScriptEncoding> {
@@ -104,13 +91,12 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
         .clone()
         .unwrap_or(derive_output_exe_path(&request.input_bat_path)?);
 
-    let stub_path = request.stub_paths.for_window_mode(request.window_mode);
-    if !stub_path.exists() {
+    if !request.template_executable_path.exists() {
         return Err(Bat2PeError::new(
             ERR_RESOURCE_NOT_FOUND,
-            "runtime stub executable was not found",
+            "bat2pe template executable was not found",
         )
-        .with_path(stub_path));
+        .with_path(request.template_executable_path.clone()));
     }
 
     if !request.overwrite && output_exe_path.exists() {
@@ -127,9 +113,10 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
         .map(load_icon_info)
         .transpose()?;
 
-    fs::copy(&stub_path, &output_exe_path)
+    fs::copy(&request.template_executable_path, &output_exe_path)
         .map_err(|error| Bat2PeError::io(&output_exe_path, &error))?;
 
+    apply_executable_subsystem(&output_exe_path, request.window_mode)?;
     apply_execution_level_manifest(&output_exe_path, request.uac)?;
     apply_version_resource(&output_exe_path, &request.version_info)?;
     if let Some(icon_path) = request.icon_path.as_deref() {
@@ -161,7 +148,7 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
     let inspect = inspect_executable(&output_exe_path)?;
     Ok(BuildResult {
         output_exe_path,
-        stub_path,
+        template_executable_path: request.template_executable_path.clone(),
         script_encoding,
         script_length: script_bytes.len() as u64,
         window_mode: request.window_mode,

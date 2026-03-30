@@ -34,18 +34,40 @@ pub fn write_payload_resources(
     write_payload_resources_raw(executable_path, &metadata_bytes, script_bytes)
 }
 
-pub fn read_payload_from_path(path: &Path) -> Result<ParsedPayload> {
+pub fn read_payload_from_path_if_present(path: &Path) -> Result<Option<ParsedPayload>> {
     match read_payload_resources_from_path(path) {
-        Ok(payload) => Ok(payload),
+        Ok(payload) => Ok(Some(payload)),
         Err(resource_error) if is_missing_payload_resource_error(&resource_error) => {
-            read_legacy_overlay_from_path(path).or(Err(resource_error))
+            match read_legacy_overlay_from_path(path) {
+                Ok(payload) => Ok(Some(payload)),
+                Err(legacy_error) if is_missing_legacy_overlay_error(&legacy_error) => Ok(None),
+                Err(legacy_error) => Err(legacy_error),
+            }
         }
         Err(error) => Err(error),
     }
 }
 
+pub fn read_payload_from_path(path: &Path) -> Result<ParsedPayload> {
+    read_payload_from_path_if_present(path)?.ok_or_else(|| {
+        Bat2PeError::new(
+            ERR_INVALID_EXECUTABLE,
+            "missing bat2pe metadata payload resource",
+        )
+        .with_path(path.to_path_buf())
+    })
+}
+
 fn is_missing_payload_resource_error(error: &Bat2PeError) -> bool {
     error.code == ERR_INVALID_EXECUTABLE && error.message.contains("payload resource")
+}
+
+fn is_missing_legacy_overlay_error(error: &Bat2PeError) -> bool {
+    error.code == ERR_INVALID_EXECUTABLE
+        && (error.message.contains("missing bat2pe legacy overlay")
+            || error
+                .message
+                .contains("too small to contain a bat2pe legacy overlay"))
 }
 
 #[cfg(windows)]
@@ -441,5 +463,13 @@ mod tests {
         let error = read_legacy_overlay_from_bytes(&bytes).expect_err("invalid metadata");
         assert_eq!(error.code, ERR_INVALID_EXECUTABLE);
         assert!(error.message.contains("embedded metadata"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn read_payload_from_path_if_present_returns_none_when_payload_is_missing() {
+        let path = std::env::current_exe().expect("current exe");
+        let parsed = read_payload_from_path_if_present(&path).expect("optional payload read");
+        assert!(parsed.is_none());
     }
 }

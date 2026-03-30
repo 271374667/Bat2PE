@@ -30,8 +30,6 @@ class BuildArtifacts:
     target_dir: Path
     profile_dir: Path
     cli_exe: Path
-    stub_console_exe: Path
-    stub_windows_exe: Path
     native_library: Path
 
 
@@ -158,10 +156,6 @@ def build_artifacts(session_temp_root: Path) -> BuildArtifacts:
             "-p",
             "bat2pe",
             "-p",
-            "bat2pe-stub-console",
-            "-p",
-            "bat2pe-stub-windows",
-            "-p",
             "bat2pe-py",
             "--target-dir",
             str(target_dir),
@@ -174,8 +168,6 @@ def build_artifacts(session_temp_root: Path) -> BuildArtifacts:
         target_dir=target_dir,
         profile_dir=profile_dir,
         cli_exe=profile_dir / "bat2pe.exe",
-        stub_console_exe=profile_dir / "bat2pe-stub-console.exe",
-        stub_windows_exe=profile_dir / "bat2pe-stub-windows.exe",
         native_library=profile_dir / "bat2pe_py.dll",
     )
 
@@ -198,19 +190,30 @@ def bat2pe_module(
     package_dir.mkdir()
 
     for source in PYTHON_PACKAGE_ROOT.iterdir():
-        if source.name == "__pycache__":
+        if source.name in {"__pycache__", "bin"}:
             continue
         if source.suffix == ".pyd":
             continue
         if source.is_file():
             shutil.copy2(source, package_dir / source.name)
+        elif source.is_dir():
+            shutil.copytree(
+                source,
+                package_dir / source.name,
+                ignore=shutil.ignore_patterns("__pycache__"),
+            )
 
     native_target = package_dir / "_native.pyd"
     shutil.copy2(build_artifacts.native_library, native_target)
+    bin_dir = package_dir / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    shutil.copy2(build_artifacts.cli_exe, bin_dir / "bat2pe.exe")
 
     sys.path.insert(0, str(package_root))
-    os.environ["BAT2PE_STUB_CONSOLE"] = str(build_artifacts.stub_console_exe)
-    os.environ["BAT2PE_STUB_WINDOWS"] = str(build_artifacts.stub_windows_exe)
+    os.environ.pop("BAT2PE_STUB_CONSOLE", None)
+    os.environ.pop("BAT2PE_STUB_WINDOWS", None)
+    os.environ.pop("BAT2PE_TEMPLATE_EXE", None)
+    os.environ.pop("BAT2PE_HOST_EXE", None)
     _reset_bat2pe_modules()
     importlib.invalidate_caches()
 

@@ -165,7 +165,7 @@ def _read_fixed_version(executable_path: Path, kind: str) -> tuple[int, int, int
 def test_build_result_from_dict() -> None:
     payload = {
         "output_exe_path": "dist/demo.exe",
-        "stub_path": "target/debug/bat2pe-stub-console.exe",
+        "template_executable_path": "python/bat2pe/bin/bat2pe.exe",
         "script_encoding": "utf8",
         "script_length": 12,
         "window_mode": "visible",
@@ -290,7 +290,7 @@ def test_python_builder_inspector_verifier_roundtrip(
     build_result = builder.build()
 
     assert build_result.output_exe_path == output
-    assert build_result.stub_path.name == "bat2pe-stub-console.exe"
+    assert build_result.template_executable_path.name == "bat2pe.exe"
     assert build_result.script_encoding == "utf8"
     assert build_result.uac is False
     assert build_result.inspect.source_extension == ".cmd"
@@ -496,22 +496,22 @@ def test_python_builder_creates_missing_output_parent_directory(
     assert output.exists()
 
 
-def test_python_api_reports_missing_stub_paths(
+def test_python_api_reports_missing_template_executable(
     bat2pe_module,
     monkeypatch: pytest.MonkeyPatch,
     test_dir: Path,
 ) -> None:
-    script = test_dir / "missing_stubs.bat"
+    script = test_dir / "missing_template.bat"
     script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
 
-    monkeypatch.delenv("BAT2PE_STUB_CONSOLE", raising=False)
-    monkeypatch.delenv("BAT2PE_STUB_WINDOWS", raising=False)
-    monkeypatch.setattr("bat2pe._api._find_stub", lambda _name: None)
+    monkeypatch.delenv("BAT2PE_TEMPLATE_EXE", raising=False)
+    monkeypatch.delenv("BAT2PE_HOST_EXE", raising=False)
+    monkeypatch.setattr("bat2pe._api._find_template_executable", lambda: None)
 
     with pytest.raises(bat2pe_module.BuildError) as build_error:
         bat2pe_module.build(
             input_bat_path=script,
-            output_exe_path=test_dir / "missing_stubs.exe",
+            output_exe_path=test_dir / "missing_template.exe",
         )
 
     assert build_error.value.code == 103

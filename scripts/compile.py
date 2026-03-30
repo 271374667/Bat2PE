@@ -29,7 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Build all bat2pe artifacts, defaulting to release-grade outputs for "
-            "the Rust CLI, runtime stubs, and the Python native extension."
+            "the Rust CLI/runtime host and the Python native extension."
         )
     )
     parser.add_argument(
@@ -69,10 +69,6 @@ def build_all(layout: BuildLayout) -> None:
         "-p",
         "bat2pe",
         "-p",
-        "bat2pe-stub-console",
-        "-p",
-        "bat2pe-stub-windows",
-        "-p",
         "bat2pe-py",
         "--target-dir",
         str(layout.target_dir),
@@ -85,11 +81,9 @@ def sync_artifacts(layout: BuildLayout) -> dict[str, str]:
     PYTHON_BIN_DIR.mkdir(parents=True, exist_ok=True)
 
     cli_exe = output_dir / "bat2pe.exe"
-    stub_console = output_dir / "bat2pe-stub-console.exe"
-    stub_windows = output_dir / "bat2pe-stub-windows.exe"
     native_dll = output_dir / "bat2pe_py.dll"
 
-    expected = [cli_exe, stub_console, stub_windows, native_dll]
+    expected = [cli_exe, native_dll]
     missing = [path for path in expected if not path.exists()]
     if missing:
         formatted = "\n".join(str(path) for path in missing)
@@ -99,15 +93,19 @@ def sync_artifacts(layout: BuildLayout) -> dict[str, str]:
         old_pyd.unlink()
 
     python_native = PYTHON_PACKAGE_DIR / "_native.pyd"
+    python_cli_exe = PYTHON_BIN_DIR / cli_exe.name
     shutil.copy2(native_dll, python_native)
-    shutil.copy2(stub_console, PYTHON_BIN_DIR / stub_console.name)
-    shutil.copy2(stub_windows, PYTHON_BIN_DIR / stub_windows.name)
+    shutil.copy2(cli_exe, python_cli_exe)
+
+    for stale_name in ("bat2pe-stub-console.exe", "bat2pe-stub-windows.exe"):
+        stale_path = PYTHON_BIN_DIR / stale_name
+        if stale_path.exists():
+            stale_path.unlink()
 
     return {
         "cli_exe_built": str(cli_exe),
         "python_native": str(python_native),
-        "stub_console_exe": str(PYTHON_BIN_DIR / stub_console.name),
-        "stub_windows_exe": str(PYTHON_BIN_DIR / stub_windows.name),
+        "python_cli_exe": str(python_cli_exe),
     }
 
 

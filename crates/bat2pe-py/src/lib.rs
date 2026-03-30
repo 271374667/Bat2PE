@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use bat2pe_core::{
-    Bat2PeError, BuildRequest, ERR_RESOURCE_NOT_FOUND, StubPaths, VerifyRequest, VersionInfo,
-    VersionTriplet, WindowMode, build_executable, inspect_executable, verify,
+    Bat2PeError, BuildRequest, ERR_RESOURCE_NOT_FOUND, VerifyRequest, VersionInfo, VersionTriplet,
+    WindowMode, build_executable, inspect_executable, locate_template_executable, verify,
 };
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -37,8 +37,7 @@ fn serialize_json<T: serde::Serialize>(value: &T) -> PyResult<String> {
     product_version = None,
     original_filename = None,
     internal_name = None,
-    stub_console_path = None,
-    stub_windows_path = None
+    template_executable_path = None
 ))]
 fn build(
     input_bat_path: String,
@@ -53,8 +52,7 @@ fn build(
     product_version: Option<String>,
     original_filename: Option<String>,
     internal_name: Option<String>,
-    stub_console_path: Option<String>,
-    stub_windows_path: Option<String>,
+    template_executable_path: Option<String>,
 ) -> PyResult<String> {
     let mut version_info = VersionInfo::default();
     version_info.company_name = company_name;
@@ -74,6 +72,8 @@ fn build(
     let request = BuildRequest {
         input_bat_path: PathBuf::from(input_bat_path),
         output_exe_path: output_exe_path.map(PathBuf::from),
+        template_executable_path: resolve_template_executable_path(template_executable_path)
+            .map_err(to_py_error)?,
         window_mode: if visible {
             WindowMode::Visible
         } else {
@@ -83,8 +83,6 @@ fn build(
         icon_path: icon_path.map(PathBuf::from),
         version_info,
         overwrite: true,
-        stub_paths: resolve_stub_paths(stub_console_path, stub_windows_path)
-            .map_err(to_py_error)?,
     };
 
     let result = build_executable(&request).map_err(to_py_error)?;
@@ -119,31 +117,20 @@ fn verify_pair(
     serialize_json(&result)
 }
 
-fn resolve_stub_paths(
-    stub_console_path: Option<String>,
-    stub_windows_path: Option<String>,
-) -> Result<StubPaths, Bat2PeError> {
-    let console = stub_console_path
-        .or_else(|| std::env::var("BAT2PE_STUB_CONSOLE").ok())
+fn resolve_template_executable_path(
+    template_executable_path: Option<String>,
+) -> Result<PathBuf, Bat2PeError> {
+    let template_executable_path = template_executable_path
+        .or_else(|| std::env::var("BAT2PE_TEMPLATE_EXE").ok())
+        .or_else(|| std::env::var("BAT2PE_HOST_EXE").ok())
         .ok_or_else(|| {
             Bat2PeError::new(
                 ERR_RESOURCE_NOT_FOUND,
-                "missing console stub path; build bat2pe-stub-console.exe with `cargo build -p bat2pe-stub-console -p bat2pe-stub-windows`, or pass stub_console_path / BAT2PE_STUB_CONSOLE",
-            )
-        })?;
-    let windows = stub_windows_path
-        .or_else(|| std::env::var("BAT2PE_STUB_WINDOWS").ok())
-        .ok_or_else(|| {
-            Bat2PeError::new(
-                ERR_RESOURCE_NOT_FOUND,
-                "missing hidden-window stub path; build bat2pe-stub-windows.exe with `cargo build -p bat2pe-stub-console -p bat2pe-stub-windows`, or pass stub_windows_path / BAT2PE_STUB_WINDOWS",
+                "missing bat2pe template executable; provide template_executable_path or BAT2PE_TEMPLATE_EXE",
             )
         })?;
 
-    Ok(StubPaths {
-        console: PathBuf::from(console),
-        windows: PathBuf::from(windows),
-    })
+    locate_template_executable(PathBuf::from(template_executable_path).as_path())
 }
 
 #[pymodule]

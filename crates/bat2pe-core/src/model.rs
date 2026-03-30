@@ -136,30 +136,15 @@ impl Default for RuntimeConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct StubPaths {
-    pub console: PathBuf,
-    pub windows: PathBuf,
-}
-
-impl StubPaths {
-    pub fn for_window_mode(&self, mode: WindowMode) -> PathBuf {
-        match mode {
-            WindowMode::Visible => self.console.clone(),
-            WindowMode::Hidden => self.windows.clone(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct BuildRequest {
     pub input_bat_path: PathBuf,
     pub output_exe_path: Option<PathBuf>,
+    pub template_executable_path: PathBuf,
     pub window_mode: WindowMode,
     pub uac: bool,
     pub icon_path: Option<PathBuf>,
     pub version_info: VersionInfo,
     pub overwrite: bool,
-    pub stub_paths: StubPaths,
 }
 
 #[derive(Debug, Clone)]
@@ -198,7 +183,8 @@ pub struct InspectResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuildResult {
     pub output_exe_path: PathBuf,
-    pub stub_path: PathBuf,
+    #[serde(alias = "stub_path")]
+    pub template_executable_path: PathBuf,
     pub script_encoding: ScriptEncoding,
     pub script_length: u64,
     pub window_mode: WindowMode,
@@ -227,7 +213,7 @@ pub struct VerifyResult {
 mod tests {
     use std::str::FromStr;
 
-    use super::{StubPaths, VersionTriplet, WindowMode};
+    use super::{VersionTriplet, WindowMode};
     use crate::error::ERR_INVALID_INPUT;
 
     #[test]
@@ -251,22 +237,5 @@ mod tests {
         let error = WindowMode::from_str("fullscreen").expect_err("invalid window mode");
         assert_eq!(error.code, ERR_INVALID_INPUT);
         assert!(error.message.contains("unsupported window mode"));
-    }
-
-    #[test]
-    fn chooses_stub_by_window_mode() {
-        let stubs = StubPaths {
-            console: std::path::PathBuf::from("console.exe"),
-            windows: std::path::PathBuf::from("windows.exe"),
-        };
-
-        assert_eq!(
-            stubs.for_window_mode(WindowMode::Visible),
-            std::path::PathBuf::from("console.exe")
-        );
-        assert_eq!(
-            stubs.for_window_mode(WindowMode::Hidden),
-            std::path::PathBuf::from("windows.exe")
-        );
     }
 }

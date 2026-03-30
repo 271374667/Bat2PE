@@ -42,7 +42,7 @@ def test_compile_script_supports_debug_profile(
     assert args.debug is True
 
 
-def test_compile_script_syncs_python_artifacts_without_copying_cli(
+def test_compile_script_syncs_python_artifacts_with_single_host_executable(
     repo_root: Path,
     test_dir: Path,
     monkeypatch,
@@ -73,13 +73,11 @@ def test_compile_script_syncs_python_artifacts_without_copying_cli(
     output_dir = target_dir / "release"
     output_dir.mkdir(parents=True)
     cli_exe = output_dir / "bat2pe.exe"
-    stub_console = output_dir / "bat2pe-stub-console.exe"
-    stub_windows = output_dir / "bat2pe-stub-windows.exe"
     native_dll = output_dir / "bat2pe_py.dll"
     cli_exe.write_bytes(b"cli")
-    stub_console.write_bytes(b"console")
-    stub_windows.write_bytes(b"windows")
     native_dll.write_bytes(b"native")
+    (bin_dir / "bat2pe-stub-console.exe").write_bytes(b"old-console")
+    (bin_dir / "bat2pe-stub-windows.exe").write_bytes(b"old-windows")
 
     monkeypatch.setattr(module, "PYTHON_PACKAGE_DIR", PackageDirProxy(package_dir))
     monkeypatch.setattr(module, "PYTHON_BIN_DIR", bin_dir)
@@ -87,12 +85,13 @@ def test_compile_script_syncs_python_artifacts_without_copying_cli(
     summary = module.sync_artifacts(module.BuildLayout(profile="release", target_dir=target_dir))
 
     assert (package_dir / "_native.pyd").read_bytes() == b"native"
-    assert (bin_dir / "bat2pe-stub-console.exe").read_bytes() == b"console"
-    assert (bin_dir / "bat2pe-stub-windows.exe").read_bytes() == b"windows"
-    assert not (bin_dir / "bat2pe.exe").exists()
+    assert (bin_dir / "bat2pe.exe").read_bytes() == b"cli"
+    assert not (bin_dir / "bat2pe-stub-console.exe").exists()
+    assert not (bin_dir / "bat2pe-stub-windows.exe").exists()
     assert unlinked == ["_native*.pyd"]
     assert summary["cli_exe_built"] == str(cli_exe)
     assert summary["python_native"] == str(package_dir / "_native.pyd")
+    assert summary["python_cli_exe"] == str(bin_dir / "bat2pe.exe")
 
 
 def test_compile_script_main_skip_copy_reports_release_summary(
@@ -146,8 +145,7 @@ def test_compile_script_main_syncs_debug_summary(
         "sync_artifacts",
         lambda layout: {
             "python_native": "python/bat2pe/_native.pyd",
-            "stub_console_exe": "python/bat2pe/bin/bat2pe-stub-console.exe",
-            "stub_windows_exe": "python/bat2pe/bin/bat2pe-stub-windows.exe",
+            "python_cli_exe": "python/bat2pe/bin/bat2pe.exe",
             "cli_exe_built": str(layout.output_dir / "bat2pe.exe"),
         },
     )

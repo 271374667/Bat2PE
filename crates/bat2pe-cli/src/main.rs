@@ -6,12 +6,13 @@ use std::str::FromStr;
 
 use bat2pe_core::{
     Bat2PeError, BuildRequest, ERR_CLI_USAGE, Result, VerifyRequest, VersionInfo, VersionTriplet,
-    WindowMode, build_executable, inspect_executable, locate_stub_binaries, verify,
+    WindowMode, build_executable, inspect_executable, locate_template_executable,
+    maybe_run_current_executable, verify,
 };
 use serde::Serialize;
 
 fn main() {
-    let exit_code = match real_main() {
+    let exit_code = match dispatch_main() {
         Ok(code) => code,
         Err(error) => {
             eprintln!("{error}");
@@ -20,6 +21,14 @@ fn main() {
     };
 
     process::exit(exit_code);
+}
+
+fn dispatch_main() -> Result<i32> {
+    if let Some(exit_code) = maybe_run_current_executable()? {
+        return Ok(exit_code);
+    }
+
+    real_main()
 }
 
 fn real_main() -> Result<i32> {
@@ -138,17 +147,16 @@ fn run_build(args: Vec<OsString>) -> Result<i32> {
     }
 
     let verbosity = resolve_verbosity(quiet, verbose)?;
+    let current_exe = env::current_exe().map_err(|error| usage_error(error.to_string()))?;
     let request = BuildRequest {
         input_bat_path: input_bat_path.ok_or_else(|| usage_error("missing input bat path"))?,
         output_exe_path,
+        template_executable_path: locate_template_executable(&current_exe)?,
         window_mode,
         uac,
         icon_path,
         version_info,
         overwrite: true,
-        stub_paths: locate_stub_binaries(
-            &env::current_exe().map_err(|error| usage_error(error.to_string()))?,
-        )?,
     };
     let result = build_executable(&request)?;
     if !matches!(verbosity, Verbosity::Quiet) {

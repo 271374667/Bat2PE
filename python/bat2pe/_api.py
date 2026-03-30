@@ -73,38 +73,22 @@ def _validate_existing_file_path(value: Pathish, *, arg_name: str) -> Path:
     return path
 
 
-def _candidate_stub_paths(binary_name: str) -> list[Path]:
-    """Build the ordered list of stub executable locations to probe.
-
-    Args:
-        binary_name: Stub executable base name without the `.exe` suffix.
-
-    Returns:
-        list[Path]: Candidate paths searched from packaged binaries to local
-        development build outputs.
-    """
+def _candidate_template_executable_paths() -> list[Path]:
+    """Build the ordered list of bat2pe template executable locations to probe."""
 
     package_dir = Path(__file__).resolve().parent
     repo_root = package_dir.parents[1]
     return [
-        package_dir / "bin" / f"{binary_name}.exe",
-        repo_root / "target" / "debug" / f"{binary_name}.exe",
-        repo_root / "target" / "release" / f"{binary_name}.exe",
+        package_dir / "bin" / "bat2pe.exe",
+        repo_root / "target" / "debug" / "bat2pe.exe",
+        repo_root / "target" / "release" / "bat2pe.exe",
     ]
 
 
-def _find_stub(binary_name: str) -> str | None:
-    """Return the first existing stub executable for a given binary name.
+def _find_template_executable() -> str | None:
+    """Return the first existing bat2pe template executable."""
 
-    Args:
-        binary_name: Stub executable base name without the `.exe` suffix.
-
-    Returns:
-        str | None: Absolute path to the first discovered stub executable, or
-        `None` when no candidate exists.
-    """
-
-    for candidate in _candidate_stub_paths(binary_name):
+    for candidate in _candidate_template_executable_paths():
         if candidate.exists():
             return str(candidate)
     return None
@@ -163,12 +147,8 @@ class Builder:
         product_version: str | None = None,
         original_filename: str | None = None,
         internal_name: str | None = None,
-        stub_console_path: Pathish | None = None,
-        stub_windows_path: Pathish | None = None,
         output_exe: Pathish | None = None,
         icon: Pathish | None = None,
-        stub_console: Pathish | None = None,
-        stub_windows: Pathish | None = None,
     ) -> None:
         """Initialize a build request.
 
@@ -191,12 +171,6 @@ class Builder:
             original_filename: Optional original filename recorded in version
                 metadata.
             internal_name: Optional internal name recorded in version metadata.
-            stub_console_path: Optional path to the console-mode stub executable.
-                When omitted, bat2pe attempts to discover a packaged or locally
-                built stub automatically.
-            stub_windows_path: Optional path to the windowed stub executable. When
-                omitted, bat2pe attempts to discover a packaged or locally
-                built stub automatically.
         """
 
         resolved_output_exe_path = _resolve_alias(
@@ -211,19 +185,6 @@ class Builder:
             preferred_name="icon_path",
             legacy_name="icon",
         )
-        resolved_stub_console_path = _resolve_alias(
-            stub_console_path,
-            stub_console,
-            preferred_name="stub_console_path",
-            legacy_name="stub_console",
-        )
-        resolved_stub_windows_path = _resolve_alias(
-            stub_windows_path,
-            stub_windows,
-            preferred_name="stub_windows_path",
-            legacy_name="stub_windows",
-        )
-
         self.input_bat_path = _validate_existing_file_path(
             input_bat_path,
             arg_name="input_bat_path",
@@ -245,12 +206,6 @@ class Builder:
         self.product_version = product_version
         self.original_filename = original_filename
         self.internal_name = internal_name
-        self.stub_console_path = (
-            Path(resolved_stub_console_path) if resolved_stub_console_path is not None else None
-        )
-        self.stub_windows_path = (
-            Path(resolved_stub_windows_path) if resolved_stub_windows_path is not None else None
-        )
 
     @property
     def input_script(self) -> Path:
@@ -263,14 +218,6 @@ class Builder:
     @property
     def icon(self) -> Path | None:
         return self.icon_path
-
-    @property
-    def stub_console(self) -> Path | None:
-        return self.stub_console_path
-
-    @property
-    def stub_windows(self) -> Path | None:
-        return self.stub_windows_path
 
     def build(self) -> BuildResult:
         """Build an executable from the options stored on this instance.
@@ -312,12 +259,7 @@ class Builder:
                 product_version=self.product_version,
                 original_filename=self.original_filename,
                 internal_name=self.internal_name,
-                stub_console_path=_normalize_path(self.stub_console_path)
-                if self.stub_console_path is not None
-                else _find_stub("bat2pe-stub-console"),
-                stub_windows_path=_normalize_path(self.stub_windows_path)
-                if self.stub_windows_path is not None
-                else _find_stub("bat2pe-stub-windows"),
+                template_executable_path=_find_template_executable(),
             )
         except Exception as exc:  # noqa: BLE001
             raise map_native_error(exc, BuildError) from exc
@@ -517,12 +459,8 @@ def build(
     product_version: str | None = None,
     original_filename: str | None = None,
     internal_name: str | None = None,
-    stub_console_path: Pathish | None = None,
-    stub_windows_path: Pathish | None = None,
     output_exe: Pathish | None = None,
     icon: Pathish | None = None,
-    stub_console: Pathish | None = None,
-    stub_windows: Pathish | None = None,
 ) -> BuildResult:
     """Build an executable with the functional convenience API.
 
@@ -546,8 +484,6 @@ def build(
         original_filename: Optional original filename recorded in version
             metadata.
         internal_name: Optional internal name recorded in version metadata.
-        stub_console_path: Optional path to the console-mode stub executable.
-        stub_windows_path: Optional path to the windowed stub executable.
 
     Returns:
         BuildResult: Build metadata plus an inspection snapshot of the
@@ -581,12 +517,8 @@ def build(
         product_version=product_version,
         original_filename=original_filename,
         internal_name=internal_name,
-        stub_console_path=stub_console_path,
-        stub_windows_path=stub_windows_path,
         output_exe=output_exe,
         icon=icon,
-        stub_console=stub_console,
-        stub_windows=stub_windows,
     ).build()
 
 

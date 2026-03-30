@@ -113,7 +113,7 @@ class InspectResult:
 @dataclass(slots=True, frozen=True)
 class BuildResult:
     output_exe_path: Path
-    stub_path: Path
+    template_executable_path: Path
     script_encoding: str
     script_length: int
     window_mode: str
@@ -125,10 +125,13 @@ class BuildResult:
         output_exe_value = data.get("output_exe_path")
         if output_exe_value is None:
             output_exe_value = data["output_exe"]
+        template_executable_value = data.get("template_executable_path")
+        if template_executable_value is None:
+            template_executable_value = data["stub_path"]
 
         return cls(
             output_exe_path=Path(output_exe_value),
-            stub_path=Path(data["stub_path"]),
+            template_executable_path=Path(template_executable_value),
             script_encoding=str(data["script_encoding"]),
             script_length=int(data["script_length"]),
             window_mode=str(data["window_mode"]),
@@ -139,6 +142,10 @@ class BuildResult:
     @property
     def output_exe(self) -> Path:
         return self.output_exe_path
+
+    @property
+    def stub_path(self) -> Path:
+        return self.template_executable_path
 
 
 @dataclass(slots=True, frozen=True)

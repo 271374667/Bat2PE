@@ -1,8 +1,9 @@
 use std::fs;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use crate::error::{Bat2PeError, ERR_INVALID_INPUT, ERR_IO, Result};
-use crate::model::{VersionInfo, VersionTriplet};
+use crate::error::{Bat2PeError, ERR_INVALID_EXECUTABLE, ERR_INVALID_INPUT, ERR_IO, Result};
+use crate::model::{VersionInfo, VersionTriplet, WindowMode};
 
 const RT_ICON: u16 = 3;
 const RT_GROUP_ICON: u16 = 14;
@@ -18,6 +19,11 @@ const VS_FFI_STRUC_VERSION: u32 = 0x0001_0000;
 const VOS_NT_WINDOWS32: u32 = 0x0004_0004;
 const VFT_APP: u32 = 0x0000_0001;
 const VS_FFI_FILEFLAGSMASK: u32 = 0x0000_003F;
+const DOS_SIGNATURE: u16 = 0x5A4D;
+const PE_SIGNATURE: u32 = 0x0000_4550;
+const PE_SUBSYSTEM_OFFSET: u64 = 68;
+const IMAGE_SUBSYSTEM_WINDOWS_GUI: u16 = 2;
+const IMAGE_SUBSYSTEM_WINDOWS_CUI: u16 = 3;
 const AS_INVOKER_MANIFEST: &str = concat!(
     "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
     "<assembly xmlns=\"urn:schemas-microsoft-com:asm.v1\" manifestVersion=\"1.0\">",
@@ -78,6 +84,17 @@ pub fn apply_version_resource(executable_path: &Path, version_info: &VersionInfo
         &bytes,
         "version resource",
     )
+}
+
+pub fn apply_executable_subsystem(executable_path: &Path, window_mode: WindowMode) -> Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(executable_path)
+        .map_err(|error| Bat2PeError::io(executable_path, &error))?;
+
+    patch_pe_subsystem(&mut file, subsystem_for_window_mode(window_mode))
+        .map_err(|error| error.with_path(executable_path.to_path_buf()))
 }
 
 impl ParsedIcoFile {
@@ -218,6 +235,66 @@ fn execution_level_manifest_bytes(uac: bool) -> &'static [u8] {
     } else {
         AS_INVOKER_MANIFEST.as_bytes()
     }
+}
+
+fn subsystem_for_window_mode(window_mode: WindowMode) -> u16 {
+    match window_mode {
+        WindowMode::Visible => IMAGE_SUBSYSTEM_WINDOWS_CUI,
+        WindowMode::Hidden => IMAGE_SUBSYSTEM_WINDOWS_GUI,
+    }
+}
+
+fn patch_pe_subsystem<T>(file: &mut T, subsystem: u16) -> Result<()>
+where
+    T: Read + Write + Seek,
+{
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| invalid_executable_io(error, "failed to read DOS header"))?;
+
+    let mut dos_header = [0u8; 64];
+    file.read_exact(&mut dos_header)
+        .map_err(|error| invalid_executable_io(error, "failed to read DOS header"))?;
+
+    if u16::from_le_bytes([dos_header[0], dos_header[1]]) != DOS_SIGNATURE {
+        return Err(Bat2PeError::new(
+            ERR_INVALID_EXECUTABLE,
+            "invalid executable DOS signature",
+        ));
+    }
+
+    let pe_offset = u32::from_le_bytes([
+        dos_header[0x3C],
+        dos_header[0x3D],
+        dos_header[0x3E],
+        dos_header[0x3F],
+    ]) as u64;
+    let signature_offset = pe_offset;
+    let subsystem_offset = pe_offset + 4 + 20 + PE_SUBSYSTEM_OFFSET;
+
+    file.seek(SeekFrom::Start(signature_offset))
+        .map_err(|error| invalid_executable_io(error, "failed to seek to PE header"))?;
+
+    let mut signature = [0u8; 4];
+    file.read_exact(&mut signature)
+        .map_err(|error| invalid_executable_io(error, "failed to read PE signature"))?;
+    if u32::from_le_bytes(signature) != PE_SIGNATURE {
+        return Err(Bat2PeError::new(
+            ERR_INVALID_EXECUTABLE,
+            "invalid PE signature",
+        ));
+    }
+
+    file.seek(SeekFrom::Start(subsystem_offset))
+        .map_err(|error| invalid_executable_io(error, "failed to seek to subsystem field"))?;
+    file.write_all(&subsystem.to_le_bytes())
+        .map_err(|error| invalid_executable_io(error, "failed to write subsystem field"))?;
+    file.flush()
+        .map_err(|error| invalid_executable_io(error, "failed to flush subsystem update"))?;
+    Ok(())
+}
+
+fn invalid_executable_io(error: std::io::Error, message: &str) -> Bat2PeError {
+    Bat2PeError::new(ERR_INVALID_EXECUTABLE, message).with_details(error.to_string())
 }
 
 #[cfg(windows)]
@@ -628,8 +705,22 @@ fn win32_error(path: &Path, message: impl Into<String>) -> Bat2PeError {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_version_resource_bytes, execution_level_manifest_bytes};
+    use std::io::{Cursor, Seek, SeekFrom};
+
+    use super::{
+        IMAGE_SUBSYSTEM_WINDOWS_GUI, build_version_resource_bytes, execution_level_manifest_bytes,
+        patch_pe_subsystem,
+    };
+    use crate::error::ERR_INVALID_EXECUTABLE;
     use crate::model::{VersionInfo, VersionTriplet};
+
+    fn fake_pe_bytes() -> Vec<u8> {
+        let mut bytes = vec![0u8; 512];
+        bytes[0..2].copy_from_slice(b"MZ");
+        bytes[0x3C..0x40].copy_from_slice(&0x80u32.to_le_bytes());
+        bytes[0x80..0x84].copy_from_slice(b"PE\0\0");
+        bytes
+    }
 
     #[test]
     fn uses_as_invoker_manifest_when_uac_is_disabled() {
@@ -681,5 +772,30 @@ mod tests {
         assert!(utf16.contains("1.2.3"));
         assert!(utf16.contains("ProductVersion"));
         assert!(utf16.contains("4.5.6"));
+    }
+
+    #[test]
+    fn patch_pe_subsystem_updates_optional_header() {
+        let mut cursor = Cursor::new(fake_pe_bytes());
+
+        patch_pe_subsystem(&mut cursor, IMAGE_SUBSYSTEM_WINDOWS_GUI).expect("patch subsystem");
+        cursor
+            .seek(SeekFrom::Start(0x80 + 4 + 20 + 68))
+            .expect("seek to subsystem");
+
+        let mut subsystem = [0u8; 2];
+        use std::io::Read;
+        cursor
+            .read_exact(&mut subsystem)
+            .expect("read subsystem bytes");
+        assert_eq!(u16::from_le_bytes(subsystem), IMAGE_SUBSYSTEM_WINDOWS_GUI);
+    }
+
+    #[test]
+    fn patch_pe_subsystem_rejects_invalid_headers() {
+        let mut cursor = Cursor::new(vec![0u8; 128]);
+        let error = patch_pe_subsystem(&mut cursor, IMAGE_SUBSYSTEM_WINDOWS_GUI)
+            .expect_err("invalid executable");
+        assert_eq!(error.code, ERR_INVALID_EXECUTABLE);
     }
 }

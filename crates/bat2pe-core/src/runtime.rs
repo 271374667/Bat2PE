@@ -23,20 +23,44 @@ mod imp {
 
     use crate::error::{Bat2PeError, ERR_DIRECTORY_NOT_WRITABLE, ERR_INVALID_EXECUTABLE, Result};
     use crate::model::WindowMode;
-    use crate::overlay::read_payload_from_path;
+    use crate::overlay::{read_payload_from_path, read_payload_from_path_if_present};
 
     pub fn run_console() -> Result<i32> {
         if is_cleanup_helper_invocation() {
             return run_cleanup_helper();
         }
-        run(WindowMode::Visible)
+        run_with_requested_mode(WindowMode::Visible)
     }
 
     pub fn run_windows() -> Result<i32> {
         if is_cleanup_helper_invocation() {
             return run_cleanup_helper();
         }
-        run(WindowMode::Hidden)
+        run_with_requested_mode(WindowMode::Hidden)
+    }
+
+    pub fn maybe_run_current() -> Result<Option<i32>> {
+        if is_cleanup_helper_invocation() {
+            return Ok(Some(run_cleanup_helper()?));
+        }
+
+        let exe_path = env::current_exe().map_err(|error| {
+            Bat2PeError::new(
+                ERR_INVALID_EXECUTABLE,
+                "failed to resolve current executable",
+            )
+            .with_details(error.to_string())
+        })?;
+        let Some(payload) = read_payload_from_path_if_present(&exe_path)? else {
+            return Ok(None);
+        };
+
+        Ok(Some(run_embedded_script(
+            &exe_path,
+            payload.metadata.runtime.window_mode,
+            &payload.metadata.runtime.temp_script_suffix,
+            &payload.script_bytes,
+        )?))
     }
 
     struct TempScript {
@@ -58,7 +82,7 @@ mod imp {
         }
     }
 
-    fn run(mode: WindowMode) -> Result<i32> {
+    fn run_with_requested_mode(mode: WindowMode) -> Result<i32> {
         let exe_path = env::current_exe().map_err(|error| {
             Bat2PeError::new(
                 ERR_INVALID_EXECUTABLE,
@@ -67,6 +91,20 @@ mod imp {
             .with_details(error.to_string())
         })?;
         let overlay = read_payload_from_path(&exe_path)?;
+        run_embedded_script(
+            &exe_path,
+            mode,
+            &overlay.metadata.runtime.temp_script_suffix,
+            &overlay.script_bytes,
+        )
+    }
+
+    fn run_embedded_script(
+        exe_path: &Path,
+        mode: WindowMode,
+        temp_script_suffix: &str,
+        script_bytes: &[u8],
+    ) -> Result<i32> {
         let exe_directory = exe_path.parent().ok_or_else(|| {
             Bat2PeError::new(
                 ERR_INVALID_EXECUTABLE,
@@ -75,11 +113,7 @@ mod imp {
         })?;
 
         cleanup_stale_temp_scripts(exe_directory);
-        let temp_script = create_temp_script(
-            exe_directory,
-            &overlay.metadata.runtime.temp_script_suffix,
-            &overlay.script_bytes,
-        )?;
+        let temp_script = create_temp_script(exe_directory, temp_script_suffix, script_bytes)?;
         spawn_cleanup_helper(&exe_path, std::process::id(), &temp_script.path);
         spawn_cmd(mode, &temp_script.path)
     }
@@ -440,6 +474,10 @@ mod imp {
             "bat2pe runtime stubs are only supported on Windows",
         ))
     }
+
+    pub fn maybe_run_current() -> Result<Option<i32>> {
+        Ok(None)
+    }
 }
 
 pub fn run_console_stub() -> crate::Result<i32> {
@@ -448,4 +486,8 @@ pub fn run_console_stub() -> crate::Result<i32> {
 
 pub fn run_windows_stub() -> crate::Result<i32> {
     imp::run_windows()
+}
+
+pub fn maybe_run_current_executable() -> crate::Result<Option<i32>> {
+    imp::maybe_run_current()
 }
