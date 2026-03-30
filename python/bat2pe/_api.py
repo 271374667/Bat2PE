@@ -51,45 +51,6 @@ def _normalize_path(value: Pathish) -> str:
     return str(Path(value))
 
 
-def _coerce_bool_flag(value: bool, *, arg_name: str) -> bool:
-    """Validate that a public boolean flag was passed as a real bool."""
-
-    if not isinstance(value, bool):
-        raise TypeError(f"{arg_name!r} must be a bool")
-    return value
-
-
-def _validate_existing_file_path(value: Pathish, *, arg_name: str) -> Path:
-    """Validate that a required path-like argument points to an existing file."""
-
-    if isinstance(value, str) and not value.strip():
-        raise ValueError(f"{arg_name!r} must not be empty")
-
-    path = Path(value)
-    if not path.exists():
-        raise FileNotFoundError(f"{arg_name!r} does not exist: {path}")
-    if not path.is_file():
-        raise ValueError(f"{arg_name!r} must point to an existing file: {path}")
-    return path
-
-
-def _resolve_alias(
-    preferred_value,
-    legacy_value,
-    *,
-    preferred_name: str,
-    legacy_name: str,
-    required: bool = False,
-):
-    if preferred_value is not None and legacy_value is not None:
-        raise TypeError(f"pass either {preferred_name!r} or {legacy_name!r}, not both")
-
-    value = preferred_value if preferred_value is not None else legacy_value
-    if required and value is None:
-        raise TypeError(f"missing required argument: {preferred_name!r}")
-    return value
-
-
 class Builder:
     """Stateful builder for converting a batch script into an executable.
 
@@ -151,20 +112,13 @@ class Builder:
                 metadata. Defaults to the generated output file stem when omitted.
         """
 
-        self.input_bat_path = _validate_existing_file_path(
-            input_bat_path,
-            arg_name="input_bat_path",
-        )
+        self.input_bat_path = Path(input_bat_path)
         self.output_exe_path = (
             Path(output_exe_path) if output_exe_path is not None else None
         )
-        self.visible = _coerce_bool_flag(visible, arg_name="visible")
+        self.visible = visible
         self.uac = uac
-        self.icon_path = (
-            _validate_existing_file_path(icon_path, arg_name="icon_path")
-            if icon_path is not None
-            else None
-        )
+        self.icon_path = Path(icon_path) if icon_path is not None else None
         self.company_name = company_name
         self.product_name = product_name
         self.description = description
@@ -172,10 +126,6 @@ class Builder:
         self.product_version = product_version
         self.original_filename = original_filename
         self.internal_name = internal_name
-
-    @property
-    def input_script(self) -> Path:
-        return self.input_bat_path
 
     def build(self) -> BuildResult:
         """Build an executable from the options stored on this instance.
@@ -238,8 +188,7 @@ class Inspector:
 
     def __init__(
         self,
-        executable_path: Pathish | None = None,
-        executable: Pathish | None = None,
+        executable_path: Pathish,
     ) -> None:
         """Initialize an inspector for a generated executable.
 
@@ -248,18 +197,7 @@ class Inspector:
                 for inspection.
         """
 
-        resolved_executable_path = _resolve_alias(
-            executable_path,
-            executable,
-            preferred_name="executable_path",
-            legacy_name="executable",
-            required=True,
-        )
-        self.executable_path = Path(resolved_executable_path)
-
-    @property
-    def executable(self) -> Path:
-        return self.executable_path
+        self.executable_path = Path(executable_path)
 
     def inspect(self) -> InspectResult:
         """Inspect the configured executable and decode its embedded metadata.
@@ -306,14 +244,11 @@ class Verifier:
 
     def __init__(
         self,
-        script_path: Pathish | None = None,
-        executable_path: Pathish | None = None,
+        script_path: Pathish,
+        executable_path: Pathish,
         *,
         args: Iterable[str] | None = None,
         cwd_path: Pathish | None = None,
-        script: Pathish | None = None,
-        executable: Pathish | None = None,
-        cwd: Pathish | None = None,
     ) -> None:
         """Initialize a verification request.
 
@@ -329,43 +264,10 @@ class Verifier:
                 directory.
         """
 
-        resolved_script_path = _resolve_alias(
-            script_path,
-            script,
-            preferred_name="script_path",
-            legacy_name="script",
-            required=True,
-        )
-        resolved_executable_path = _resolve_alias(
-            executable_path,
-            executable,
-            preferred_name="executable_path",
-            legacy_name="executable",
-            required=True,
-        )
-        resolved_cwd_path = _resolve_alias(
-            cwd_path,
-            cwd,
-            preferred_name="cwd_path",
-            legacy_name="cwd",
-        )
-
-        self.script_path = Path(resolved_script_path)
-        self.executable_path = Path(resolved_executable_path)
+        self.script_path = Path(script_path)
+        self.executable_path = Path(executable_path)
         self.args = list(args or [])
-        self.cwd_path = Path(resolved_cwd_path) if resolved_cwd_path is not None else None
-
-    @property
-    def script(self) -> Path:
-        return self.script_path
-
-    @property
-    def executable(self) -> Path:
-        return self.executable_path
-
-    @property
-    def cwd(self) -> Path | None:
-        return self.cwd_path
+        self.cwd_path = Path(cwd_path) if cwd_path is not None else None
 
     def verify(self) -> VerifyResult:
         """Execute verification with the options stored on this instance.
@@ -477,8 +379,7 @@ def build(
 
 
 def inspect(
-    executable_path: Pathish | None = None,
-    executable: Pathish | None = None,
+    executable_path: Pathish,
 ) -> InspectResult:
     """Inspect a generated executable with the functional convenience API.
 
@@ -502,18 +403,15 @@ def inspect(
             result = inspect("dist/hello.exe")
     """
 
-    return Inspector(executable_path=executable_path, executable=executable).inspect()
+    return Inspector(executable_path=executable_path).inspect()
 
 
 def verify(
-    script_path: Pathish | None = None,
-    executable_path: Pathish | None = None,
+    script_path: Pathish,
+    executable_path: Pathish,
     *,
     args: Iterable[str] | None = None,
     cwd_path: Pathish | None = None,
-    script: Pathish | None = None,
-    executable: Pathish | None = None,
-    cwd: Pathish | None = None,
 ) -> VerifyResult:
     """Verify a generated executable with the functional convenience API.
 
@@ -552,7 +450,4 @@ def verify(
         executable_path=executable_path,
         args=args,
         cwd_path=cwd_path,
-        script=script,
-        executable=executable,
-        cwd=cwd,
     ).verify()

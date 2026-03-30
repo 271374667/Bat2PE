@@ -161,14 +161,20 @@ def _read_fixed_version(executable_path: Path, kind: str) -> tuple[int, int, int
 def test_cli_help_smoke(cli_runner) -> None:
     completed = cli_runner("--help")
     help_subcommand = cli_runner("help")
+    version = cli_runner("--version")
+    version_subcommand = cli_runner("version")
 
     assert completed.returncode == 0
     assert help_subcommand.returncode == 0
+    assert version.returncode == 0
+    assert version_subcommand.returncode == 0
     assert help_subcommand.stdout == completed.stdout
+    assert version_subcommand.stdout == version.stdout
     assert "Bat2PE CLI" in completed.stdout
     assert 'Use "bat2pe <COMMAND> --help" for command-specific help.' in completed.stdout
     assert "bat2pe build run.bat" in completed.stdout
-    assert "bat2pe verify --script-path run.bat --exe-path run.exe" in completed.stdout
+    assert "bat2pe verify run.bat run.exe" in completed.stdout
+    assert version.stdout.startswith("bat2pe ")
 
 
 def test_cli_subcommand_help_is_specific(cli_runner) -> None:
@@ -176,7 +182,8 @@ def test_cli_subcommand_help_is_specific(cli_runner) -> None:
     assert build_help.returncode == 0
     assert "Build Command" in build_help.stdout
     assert "--input-bat-path PATH" in build_help.stdout
-    assert "build run.bat --window hidden" in build_help.stdout
+    assert "--visible BOOL" in build_help.stdout
+    assert "build run.bat --visible false" in build_help.stdout
 
     build_help_alias = cli_runner("help", "build")
     assert build_help_alias.returncode == 0
@@ -191,8 +198,8 @@ def test_cli_subcommand_help_is_specific(cli_runner) -> None:
     verify_help = cli_runner("verify", "--help")
     assert verify_help.returncode == 0
     assert "Verify Command" in verify_help.stdout
+    assert "<SCRIPT_PATH>" in verify_help.stdout
     assert "--script-path, --script PATH" in verify_help.stdout
-    assert "verify only accepts named options before --." in verify_help.stdout
     assert "--arg VALUE" in verify_help.stdout
 
 
@@ -207,11 +214,11 @@ def test_cli_reports_usage_errors(cli_runner, test_dir: Path) -> None:
 
     verify_missing = cli_runner("verify", "--script-path", test_dir / "missing.bat")
     assert verify_missing.returncode == 1
-    assert "missing --exe-path" in verify_missing.stderr
+    assert "missing executable path" in verify_missing.stderr
 
     verify_positional = cli_runner("verify", "positional")
     assert verify_positional.returncode == 1
-    assert "verify only accepts named options" in verify_positional.stderr
+    assert "missing executable path" in verify_positional.stderr
 
     missing_out_value = cli_runner(
         "build",
@@ -258,8 +265,8 @@ def test_cli_build_and_inspect_returns_full_metadata(
         "launcher.exe",
         "--internal-name",
         "launcher",
-        "--window",
-        "hidden",
+        "--visible",
+        "false",
         "--uac",
     )
 
@@ -360,25 +367,13 @@ def test_cli_defaults_output_path_and_overwrites_existing_file(
     assert _extract_execution_level(default_output) == "asInvoker"
 
 
-def test_cli_rejects_conflicting_verbosity_and_invalid_inputs(
+def test_cli_rejects_invalid_inputs(
     cli_runner,
     test_dir: Path,
 ) -> None:
     script = test_dir / "bad.txt"
     script.write_text("not a batch file", encoding="utf-8")
     output = test_dir / "bad.exe"
-
-    conflict = cli_runner(
-        "build",
-        "--input-bat-path",
-        script,
-        "--output-exe-path",
-        output,
-        "--quiet",
-        "--verbose",
-    )
-    assert conflict.returncode == 1
-    assert "--quiet and --verbose are mutually exclusive" in conflict.stderr
 
     bad_script = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
     assert bad_script.returncode == 1
@@ -412,17 +407,17 @@ def test_cli_rejects_conflicting_verbosity_and_invalid_inputs(
     assert bad_icon_result.returncode == 1
     assert "only .ico icon files are supported" in bad_icon_result.stderr
 
-    invalid_window = cli_runner(
+    invalid_visible = cli_runner(
         "build",
         "--input-bat-path",
         real_script,
         "--output-exe-path",
         output,
-        "--window",
+        "--visible",
         "invalid",
     )
-    assert invalid_window.returncode == 1
-    assert "unsupported window mode" in invalid_window.stderr
+    assert invalid_visible.returncode == 1
+    assert "--visible must be one of" in invalid_visible.stderr
 
     invalid_version = cli_runner(
         "build",
@@ -460,9 +455,7 @@ def test_cli_verify_matches_args_and_working_directory(cli_runner, test_dir: Pat
     working_dir.mkdir()
     verify = cli_runner(
         "verify",
-        "--script-path",
         script,
-        "--exe-path",
         output,
         "--cwd-path",
         working_dir,
@@ -484,9 +477,7 @@ def test_cli_verify_matches_args_and_working_directory(cli_runner, test_dir: Pat
 
     quiet = cli_runner(
         "verify",
-        "--script-path",
         script,
-        "--exe-path",
         output,
         "--cwd-path",
         working_dir,
@@ -506,7 +497,7 @@ def test_cli_verify_reports_mismatch(cli_runner, test_dir: Path) -> None:
     build = cli_runner("build", "--input-bat-path", built_script, "--output-exe-path", output)
     assert build.returncode == 0, build.stderr
 
-    verify = cli_runner("verify", "--script-path", different_script, "--exe-path", output)
+    verify = cli_runner("verify", different_script, output)
     assert verify.returncode == 1
     payload = json.loads(verify.stdout)
     assert payload["success"] is False
@@ -531,7 +522,7 @@ def test_cli_verify_rejects_uac_enabled_executable(cli_runner, test_dir: Path) -
     )
     assert build.returncode == 0, build.stderr
 
-    verify = cli_runner("verify", "--script-path", script, "--exe-path", output)
+    verify = cli_runner("verify", script, output)
     assert verify.returncode == 1
     assert "does not support uac-enabled executables" in verify.stderr
 

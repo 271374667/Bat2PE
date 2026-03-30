@@ -265,6 +265,10 @@ def test_python_build_api_uses_canonical_output_and_icon_names(
 
     build_signature = pyinspect.signature(bat2pe_module.build)
     builder_signature = pyinspect.signature(bat2pe_module.Builder)
+    inspect_signature = pyinspect.signature(bat2pe_module.inspect)
+    inspector_signature = pyinspect.signature(bat2pe_module.Inspector)
+    verify_signature = pyinspect.signature(bat2pe_module.verify)
+    verifier_signature = pyinspect.signature(bat2pe_module.Verifier)
 
     assert "output_exe_path" in build_signature.parameters
     assert "icon_path" in build_signature.parameters
@@ -274,10 +278,41 @@ def test_python_build_api_uses_canonical_output_and_icon_names(
     assert "icon_path" in builder_signature.parameters
     assert "output_exe" not in builder_signature.parameters
     assert "icon" not in builder_signature.parameters
+    assert "input_script" not in builder_signature.parameters
+    assert list(inspect_signature.parameters) == ["executable_path"]
+    assert list(inspector_signature.parameters) == ["executable_path"]
+    assert "executable" not in inspect_signature.parameters
+    assert "executable" not in inspector_signature.parameters
+    assert list(verify_signature.parameters) == [
+        "script_path",
+        "executable_path",
+        "args",
+        "cwd_path",
+    ]
+    assert list(verifier_signature.parameters) == [
+        "script_path",
+        "executable_path",
+        "args",
+        "cwd_path",
+    ]
+    assert "script" not in verify_signature.parameters
+    assert "executable" not in verify_signature.parameters
+    assert "cwd" not in verify_signature.parameters
+    assert "script" not in verifier_signature.parameters
+    assert "executable" not in verifier_signature.parameters
+    assert "cwd" not in verifier_signature.parameters
 
     builder = bat2pe_module.Builder(input_bat_path=script)
+    inspector = bat2pe_module.Inspector(script)
+    verifier = bat2pe_module.Verifier(script, script)
+
     assert not hasattr(builder, "output_exe")
     assert not hasattr(builder, "icon")
+    assert not hasattr(builder, "input_script")
+    assert not hasattr(inspector, "executable")
+    assert not hasattr(verifier, "script")
+    assert not hasattr(verifier, "executable")
+    assert not hasattr(verifier, "cwd")
 
 
 def test_python_build_api_rejects_removed_output_and_icon_aliases(
@@ -312,6 +347,50 @@ def test_python_build_api_rejects_removed_output_and_icon_aliases(
         bat2pe_module.Builder(
             input_bat_path=script,
             icon=icon,
+        )
+
+    with pytest.raises(TypeError, match="executable"):
+        bat2pe_module.inspect(executable=output)
+
+    with pytest.raises(TypeError, match="executable"):
+        bat2pe_module.Inspector(executable=output)
+
+    with pytest.raises(TypeError, match="script"):
+        bat2pe_module.verify(
+            script=script,
+            executable_path=output,
+        )
+
+    with pytest.raises(TypeError, match="executable"):
+        bat2pe_module.verify(
+            script_path=script,
+            executable=output,
+        )
+
+    with pytest.raises(TypeError, match="cwd"):
+        bat2pe_module.verify(
+            script_path=script,
+            executable_path=output,
+            cwd=script.parent,
+        )
+
+    with pytest.raises(TypeError, match="script"):
+        bat2pe_module.Verifier(
+            script=script,
+            executable_path=output,
+        )
+
+    with pytest.raises(TypeError, match="executable"):
+        bat2pe_module.Verifier(
+            script_path=script,
+            executable=output,
+        )
+
+    with pytest.raises(TypeError, match="cwd"):
+        bat2pe_module.Verifier(
+            script_path=script,
+            executable_path=output,
+            cwd=script.parent,
         )
 
 
@@ -378,7 +457,7 @@ def test_python_builder_inspector_verifier_roundtrip(
         script,
         output,
         args=["alpha beta", "gamma"],
-        cwd=cwd,
+        cwd_path=cwd,
     )
     verify_result = verifier.verify()
     assert verify_result.success is True
@@ -479,11 +558,6 @@ def test_python_api_raises_typed_errors(
     assert version_error.value.code == 100
 
 
-def test_python_builder_rejects_empty_input_bat_path(bat2pe_module) -> None:
-    with pytest.raises(ValueError, match="input_bat_path"):
-        bat2pe_module.Builder(input_bat_path="")
-
-
 def test_python_builder_requires_input_bat_path_argument(bat2pe_module) -> None:
     with pytest.raises(TypeError, match="input_bat_path"):
         bat2pe_module.Builder()
@@ -505,8 +579,10 @@ def test_python_builder_rejects_missing_input_bat_path_file(
 ) -> None:
     missing_script = test_dir / "missing.bat"
 
-    with pytest.raises(FileNotFoundError, match="input_bat_path"):
-        bat2pe_module.Builder(input_bat_path=missing_script)
+    with pytest.raises(bat2pe_module.BuildError) as missing_error:
+        bat2pe_module.Builder(input_bat_path=missing_script).build()
+
+    assert missing_error.value.path == missing_script
 
 
 def test_python_builder_rejects_missing_icon_path(
@@ -517,11 +593,13 @@ def test_python_builder_rejects_missing_icon_path(
     script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
     missing_icon = test_dir / "missing.ico"
 
-    with pytest.raises(FileNotFoundError, match="icon_path"):
+    with pytest.raises(bat2pe_module.BuildError) as missing_error:
         bat2pe_module.Builder(
             input_bat_path=script,
             icon_path=missing_icon,
-        )
+        ).build()
+
+    assert missing_error.value.path == missing_icon
 
 
 def test_python_builder_defaults_output_path(
