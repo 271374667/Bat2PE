@@ -50,6 +50,20 @@ def _normalize_path(value: Pathish) -> str:
     return str(Path(value))
 
 
+def _validate_existing_file_path(value: Pathish, *, arg_name: str) -> Path:
+    """Validate that a required path-like argument points to an existing file."""
+
+    if isinstance(value, str) and not value.strip():
+        raise ValueError(f"{arg_name!r} must not be empty")
+
+    path = Path(value)
+    if not path.exists():
+        raise FileNotFoundError(f"{arg_name!r} does not exist: {path}")
+    if not path.is_file():
+        raise ValueError(f"{arg_name!r} must point to an existing file: {path}")
+    return path
+
+
 def _candidate_stub_paths(binary_name: str) -> list[Path]:
     """Build the ordered list of stub executable locations to probe.
 
@@ -127,8 +141,8 @@ class Builder:
 
     def __init__(
         self,
+        input_bat_path: Pathish,
         *,
-        input_bat_path: Pathish | None = None,
         output_exe_path: Pathish | None = None,
         window: str = "visible",
         uac: bool = False,
@@ -142,7 +156,6 @@ class Builder:
         internal_name: str | None = None,
         stub_console_path: Pathish | None = None,
         stub_windows_path: Pathish | None = None,
-        input_script: Pathish | None = None,
         output_exe: Pathish | None = None,
         icon: Pathish | None = None,
         stub_console: Pathish | None = None,
@@ -177,13 +190,6 @@ class Builder:
                 built stub automatically.
         """
 
-        resolved_input_bat_path = _resolve_alias(
-            input_bat_path,
-            input_script,
-            preferred_name="input_bat_path",
-            legacy_name="input_script",
-            required=True,
-        )
         resolved_output_exe_path = _resolve_alias(
             output_exe_path,
             output_exe,
@@ -209,7 +215,10 @@ class Builder:
             legacy_name="stub_windows",
         )
 
-        self.input_bat_path = Path(resolved_input_bat_path)
+        self.input_bat_path = _validate_existing_file_path(
+            input_bat_path,
+            arg_name="input_bat_path",
+        )
         self.output_exe_path = (
             Path(resolved_output_exe_path) if resolved_output_exe_path is not None else None
         )
@@ -477,8 +486,8 @@ class Verifier:
 
 
 def build(
+    input_bat_path: Pathish,
     *,
-    input_bat_path: Pathish | None = None,
     output_exe_path: Pathish | None = None,
     window: str = "visible",
     uac: bool = False,
@@ -492,7 +501,6 @@ def build(
     internal_name: str | None = None,
     stub_console_path: Pathish | None = None,
     stub_windows_path: Pathish | None = None,
-    input_script: Pathish | None = None,
     output_exe: Pathish | None = None,
     icon: Pathish | None = None,
     stub_console: Pathish | None = None,
@@ -557,7 +565,6 @@ def build(
         internal_name=internal_name,
         stub_console_path=stub_console_path,
         stub_windows_path=stub_windows_path,
-        input_script=input_script,
         output_exe=output_exe,
         icon=icon,
         stub_console=stub_console,

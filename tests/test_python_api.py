@@ -23,6 +23,53 @@ def _extract_icon_count(executable_path: Path) -> int:
     return int(shell32.ExtractIconExW(str(executable_path), -1, None, None, 0))
 
 
+def _read_manifest_resource(executable_path: Path) -> str:
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.LoadLibraryExW.argtypes = [ctypes.c_wchar_p, ctypes.c_void_p, ctypes.c_uint32]
+    kernel32.LoadLibraryExW.restype = ctypes.c_void_p
+    kernel32.FindResourceW.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+    kernel32.FindResourceW.restype = ctypes.c_void_p
+    kernel32.SizeofResource.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    kernel32.SizeofResource.restype = ctypes.c_uint32
+    kernel32.LoadResource.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    kernel32.LoadResource.restype = ctypes.c_void_p
+    kernel32.LockResource.argtypes = [ctypes.c_void_p]
+    kernel32.LockResource.restype = ctypes.c_void_p
+    kernel32.FreeLibrary.argtypes = [ctypes.c_void_p]
+    kernel32.FreeLibrary.restype = ctypes.c_int
+
+    module = kernel32.LoadLibraryExW(str(executable_path), None, 0x00000002)
+    if not module:
+        raise OSError(ctypes.get_last_error(), f"failed to load {executable_path}")
+
+    try:
+        manifest_resource = kernel32.FindResourceW(module, ctypes.c_void_p(1), ctypes.c_void_p(24))
+        if not manifest_resource:
+            raise OSError(ctypes.get_last_error(), f"missing manifest resource in {executable_path}")
+
+        size = kernel32.SizeofResource(module, manifest_resource)
+        loaded = kernel32.LoadResource(module, manifest_resource)
+        locked = kernel32.LockResource(loaded)
+        if not loaded or not locked or size == 0:
+            raise OSError(
+                ctypes.get_last_error(),
+                f"failed to read manifest resource from {executable_path}",
+            )
+
+        return ctypes.string_at(locked, size).decode("utf-8")
+    finally:
+        kernel32.FreeLibrary(module)
+
+
+def _extract_execution_level(executable_path: Path) -> str:
+    manifest = _read_manifest_resource(executable_path)
+    if "requireAdministrator" in manifest:
+        return "requireAdministrator"
+    if "asInvoker" in manifest:
+        return "asInvoker"
+    raise AssertionError(f"unexpected manifest payload: {manifest}")
+
+
 def test_build_result_from_dict() -> None:
     payload = {
         "output_exe_path": "dist/demo.exe",
@@ -30,6 +77,7 @@ def test_build_result_from_dict() -> None:
         "script_encoding": "utf8",
         "script_length": 12,
         "window_mode": "visible",
+        "uac": False,
         "inspect": {
             "exe_path": "dist/demo.exe",
             "source_script_name": "demo.bat",
@@ -40,6 +88,7 @@ def test_build_result_from_dict() -> None:
                 "window_mode": "visible",
                 "temp_script_suffix": ".cmd",
                 "strict_dp0": True,
+                "uac": False,
             },
             "icon": None,
             "version_info": {},
@@ -49,6 +98,7 @@ def test_build_result_from_dict() -> None:
 
     result = BuildResult.from_dict(payload)
     assert result.output_exe_path == Path("dist/demo.exe")
+    assert result.uac is False
     assert result.inspect.runtime.temp_script_suffix == ".cmd"
 
 
@@ -100,11 +150,14 @@ def test_top_level_import_surface_and_functional_api(
     )
 
     assert build_result.output_exe_path == output
+    assert build_result.uac is False
     inspect_result = bat2pe_module.inspect(output)
     assert inspect_result.source_script_name == "functional_api.bat"
+    assert inspect_result.runtime.uac is False
     verify_result = bat2pe_module.verify(script, output)
     assert verify_result.success is True
     assert _extract_icon_count(output) > 0
+    assert _extract_execution_level(output) == "asInvoker"
 
 
 def test_python_builder_inspector_verifier_roundtrip(
@@ -144,8 +197,10 @@ def test_python_builder_inspector_verifier_roundtrip(
     assert build_result.output_exe_path == output
     assert build_result.stub_path.name == "bat2pe-stub-console.exe"
     assert build_result.script_encoding == "utf8"
+    assert build_result.uac is False
     assert build_result.inspect.source_extension == ".cmd"
     assert build_result.inspect.version_info.company_name == "Acme"
+    assert build_result.inspect.runtime.uac is False
     assert build_result.inspect.icon is not None
     assert build_result.inspect.icon.source_path == icon
 
@@ -168,6 +223,35 @@ def test_python_builder_inspector_verifier_roundtrip(
     assert "arg1=alpha beta" in verify_result.script.stderr
     assert "arg2=gamma" in verify_result.script.stderr
     assert _extract_icon_count(output) > 0
+    assert _extract_execution_level(output) == "asInvoker"
+
+
+def test_python_api_builds_uac_enabled_executable_and_rejects_verify(
+    bat2pe_module,
+    test_dir: Path,
+) -> None:
+    script = test_dir / "python_uac.bat"
+    script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
+    output = test_dir / "python_uac.exe"
+
+    build_result = bat2pe_module.build(
+        input_bat_path=script,
+        output_exe_path=output,
+        uac=True,
+    )
+
+    assert build_result.uac is True
+    assert build_result.inspect.runtime.uac is True
+    assert _extract_execution_level(output) == "requireAdministrator"
+
+    inspect_result = bat2pe_module.inspect(output)
+    assert inspect_result.runtime.uac is True
+
+    with pytest.raises(bat2pe_module.VerifyError) as verify_error:
+        bat2pe_module.verify(script, output)
+
+    assert verify_error.value.code == 109
+    assert "does not support uac-enabled executables" in str(verify_error.value)
 
 
 def test_python_api_raises_typed_errors(
@@ -227,6 +311,36 @@ def test_python_api_raises_typed_errors(
         )
 
     assert version_error.value.code == 100
+
+
+def test_python_builder_rejects_empty_input_bat_path(bat2pe_module) -> None:
+    with pytest.raises(ValueError, match="input_bat_path"):
+        bat2pe_module.Builder(input_bat_path="")
+
+
+def test_python_builder_requires_input_bat_path_argument(bat2pe_module) -> None:
+    with pytest.raises(TypeError, match="input_bat_path"):
+        bat2pe_module.Builder()
+
+
+def test_python_build_requires_input_bat_path_argument(bat2pe_module) -> None:
+    with pytest.raises(TypeError, match="input_bat_path"):
+        bat2pe_module.build()
+
+
+def test_python_builder_rejects_none_input_bat_path(bat2pe_module) -> None:
+    with pytest.raises(TypeError):
+        bat2pe_module.Builder(input_bat_path=None)
+
+
+def test_python_builder_rejects_missing_input_bat_path_file(
+    bat2pe_module,
+    test_dir: Path,
+) -> None:
+    missing_script = test_dir / "missing.bat"
+
+    with pytest.raises(FileNotFoundError, match="input_bat_path"):
+        bat2pe_module.Builder(input_bat_path=missing_script)
 
 
 def test_python_builder_defaults_output_path(

@@ -19,6 +19,53 @@ def _extract_icon_count(executable_path: Path) -> int:
     return int(shell32.ExtractIconExW(str(executable_path), -1, None, None, 0))
 
 
+def _read_manifest_resource(executable_path: Path) -> str:
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.LoadLibraryExW.argtypes = [ctypes.c_wchar_p, ctypes.c_void_p, ctypes.c_uint32]
+    kernel32.LoadLibraryExW.restype = ctypes.c_void_p
+    kernel32.FindResourceW.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+    kernel32.FindResourceW.restype = ctypes.c_void_p
+    kernel32.SizeofResource.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    kernel32.SizeofResource.restype = ctypes.c_uint32
+    kernel32.LoadResource.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    kernel32.LoadResource.restype = ctypes.c_void_p
+    kernel32.LockResource.argtypes = [ctypes.c_void_p]
+    kernel32.LockResource.restype = ctypes.c_void_p
+    kernel32.FreeLibrary.argtypes = [ctypes.c_void_p]
+    kernel32.FreeLibrary.restype = ctypes.c_int
+
+    module = kernel32.LoadLibraryExW(str(executable_path), None, 0x00000002)
+    if not module:
+        raise OSError(ctypes.get_last_error(), f"failed to load {executable_path}")
+
+    try:
+        manifest_resource = kernel32.FindResourceW(module, ctypes.c_void_p(1), ctypes.c_void_p(24))
+        if not manifest_resource:
+            raise OSError(ctypes.get_last_error(), f"missing manifest resource in {executable_path}")
+
+        size = kernel32.SizeofResource(module, manifest_resource)
+        loaded = kernel32.LoadResource(module, manifest_resource)
+        locked = kernel32.LockResource(loaded)
+        if not loaded or not locked or size == 0:
+            raise OSError(
+                ctypes.get_last_error(),
+                f"failed to read manifest resource from {executable_path}",
+            )
+
+        return ctypes.string_at(locked, size).decode("utf-8")
+    finally:
+        kernel32.FreeLibrary(module)
+
+
+def _extract_execution_level(executable_path: Path) -> str:
+    manifest = _read_manifest_resource(executable_path)
+    if "requireAdministrator" in manifest:
+        return "requireAdministrator"
+    if "asInvoker" in manifest:
+        return "asInvoker"
+    raise AssertionError(f"unexpected manifest payload: {manifest}")
+
+
 def test_cli_help_smoke(cli_runner) -> None:
     completed = cli_runner("help")
 
@@ -91,16 +138,19 @@ def test_cli_build_and_inspect_returns_full_metadata(
         "launcher",
         "--window",
         "hidden",
+        "--uac",
     )
 
     assert build.returncode == 0, build.stderr
     payload = json.loads(build.stdout)
     assert Path(payload["output_exe_path"]) == output
     assert payload["window_mode"] == "hidden"
+    assert payload["uac"] is True
     assert payload["script_encoding"] == "utf8"
     assert payload["inspect"]["source_extension"] == ".bat"
     assert payload["inspect"]["script_length"] == len(script_bytes)
     assert payload["inspect"]["runtime"]["window_mode"] == "hidden"
+    assert payload["inspect"]["runtime"]["uac"] is True
     assert payload["inspect"]["icon"]["file_name"] == "sample.ico"
     assert payload["inspect"]["version_info"]["company_name"] == "Acme"
     assert payload["inspect"]["version_info"]["file_version"] == {
@@ -120,7 +170,9 @@ def test_cli_build_and_inspect_returns_full_metadata(
     assert inspect_payload["source_script_name"] == "launcher.bat"
     assert inspect_payload["schema_version"] == 1
     assert inspect_payload["icon"]["size"] == len(fake_ico_bytes)
+    assert inspect_payload["runtime"]["uac"] is True
     assert _extract_icon_count(output) > 0
+    assert _extract_execution_level(output) == "requireAdministrator"
 
 
 def test_cli_supports_overwrite_and_quiet_mode(cli_runner, test_dir: Path) -> None:
@@ -169,6 +221,8 @@ def test_cli_defaults_output_path_and_overwrites_existing_file(
     assert inspect.returncode == 0, inspect.stderr
     inspect_payload = json.loads(inspect.stdout)
     assert inspect_payload["source_script_name"] == "default_output.cmd"
+    assert inspect_payload["runtime"]["uac"] is False
+    assert _extract_execution_level(default_output) == "asInvoker"
 
 
 def test_cli_rejects_conflicting_verbosity_and_invalid_inputs(
@@ -325,6 +379,26 @@ def test_cli_verify_reports_mismatch(cli_runner, test_dir: Path) -> None:
     assert payload["stderr_match"] is False
     assert payload["script"]["exit_code"] == 5
     assert payload["executable"]["exit_code"] == 0
+
+
+def test_cli_verify_rejects_uac_enabled_executable(cli_runner, test_dir: Path) -> None:
+    script = test_dir / "uac_verify.bat"
+    script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
+    output = test_dir / "uac_verify.exe"
+
+    build = cli_runner(
+        "build",
+        "--input-bat-path",
+        script,
+        "--output-exe-path",
+        output,
+        "--uac",
+    )
+    assert build.returncode == 0, build.stderr
+
+    verify = cli_runner("verify", "--script-path", script, "--exe-path", output)
+    assert verify.returncode == 1
+    assert "does not support uac-enabled executables" in verify.stderr
 
 
 def test_cli_records_supported_encodings(cli_runner, test_dir: Path) -> None:
