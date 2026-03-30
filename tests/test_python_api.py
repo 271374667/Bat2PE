@@ -218,6 +218,7 @@ def test_top_level_import_surface_and_functional_api(
     bat2pe_module,
     fake_ico_bytes: bytes,
     test_dir: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert bat2pe_module.Builder.__name__ == "Builder"
     assert bat2pe_module.build.__name__ == "build"
@@ -237,12 +238,14 @@ def test_top_level_import_surface_and_functional_api(
     build_result = bat2pe_module.build(
         input_bat_path=script,
         icon_path=icon,
-        company="Acme",
-        product="Functional API",
+        company_name="Acme",
+        product_name="Functional API",
     )
+    captured = capsys.readouterr()
 
     assert build_result.output_exe_path == output
     assert build_result.uac is False
+    assert "Overwriting existing file" in captured.out
     inspect_result = bat2pe_module.inspect(output)
     assert inspect_result.source_script_name == "functional_api.bat"
     assert inspect_result.runtime.uac is False
@@ -274,10 +277,10 @@ def test_python_builder_inspector_verifier_roundtrip(
     builder = bat2pe_module.Builder(
         input_bat_path=script,
         output_exe_path=output,
-        window="visible",
+        visible=True,
         icon_path=icon,
-        company="Acme",
-        product="Runner",
+        company_name="Acme",
+        product_name="Runner",
         description="Python API test",
         file_version="2.3.4",
         product_version="5.6.7",
@@ -338,6 +341,7 @@ def test_python_api_builds_uac_enabled_executable_and_rejects_verify(
     build_result = bat2pe_module.build(
         input_bat_path=script,
         output_exe_path=output,
+        visible=True,
         uac=True,
     )
 
@@ -445,6 +449,21 @@ def test_python_builder_rejects_missing_input_bat_path_file(
         bat2pe_module.Builder(input_bat_path=missing_script)
 
 
+def test_python_builder_rejects_missing_icon_path(
+    bat2pe_module,
+    test_dir: Path,
+) -> None:
+    script = test_dir / "icon_check.bat"
+    script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
+    missing_icon = test_dir / "missing.ico"
+
+    with pytest.raises(FileNotFoundError, match="icon_path"):
+        bat2pe_module.Builder(
+            input_bat_path=script,
+            icon_path=missing_icon,
+        )
+
+
 def test_python_builder_defaults_output_path(
     bat2pe_module,
     test_dir: Path,
@@ -457,6 +476,24 @@ def test_python_builder_defaults_output_path(
 
     assert result.output_exe_path == default_output
     assert default_output.exists()
+
+
+def test_python_builder_creates_missing_output_parent_directory(
+    bat2pe_module,
+    test_dir: Path,
+) -> None:
+    script = test_dir / "nested_output.bat"
+    script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
+    output = test_dir / "dist" / "nested" / "nested_output.exe"
+
+    result = bat2pe_module.build(
+        input_bat_path=script,
+        output_exe_path=output,
+    )
+
+    assert result.output_exe_path == output
+    assert output.parent.exists()
+    assert output.exists()
 
 
 def test_python_api_reports_missing_stub_paths(

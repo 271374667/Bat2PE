@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 from pathlib import Path
 from typing import Iterable, TypeAlias
 
@@ -48,6 +49,14 @@ def _normalize_path(value: Pathish) -> str:
     """
 
     return str(Path(value))
+
+
+def _coerce_bool_flag(value: bool, *, arg_name: str) -> bool:
+    """Validate that a public boolean flag was passed as a real bool."""
+
+    if not isinstance(value, bool):
+        raise TypeError(f"{arg_name!r} must be a bool")
+    return value
 
 
 def _validate_existing_file_path(value: Pathish, *, arg_name: str) -> Path:
@@ -131,9 +140,9 @@ class Builder:
             builder = Builder(
                 input_bat_path="scripts/hello.bat",
                 output_exe_path="dist/hello.exe",
-                window="hidden",
-                company="Example Co.",
-                product="Batch Tools",
+                visible=False,
+                company_name="Example Co.",
+                product_name="Batch Tools",
                 file_version="1.2.0",
             )
             result = builder.build()
@@ -144,11 +153,11 @@ class Builder:
         input_bat_path: Pathish,
         *,
         output_exe_path: Pathish | None = None,
-        window: str = "visible",
+        visible: bool = True,
         uac: bool = False,
         icon_path: Pathish | None = None,
-        company: str | None = None,
-        product: str | None = None,
+        company_name: str | None = None,
+        product_name: str | None = None,
         description: str | None = None,
         file_version: str | None = None,
         product_version: str | None = None,
@@ -168,11 +177,11 @@ class Builder:
                 generated executable.
             output_exe_path: Optional output path for the generated executable. When
                 omitted, the native builder decides the final output location.
-            window: Window visibility mode forwarded to the native builder.
-                Common values are `"visible"` and `"hidden"`.
+            visible: Whether the generated executable should show a console
+                window when launched.
             icon_path: Optional path to an `.ico` file embedded into the executable.
-            company: Optional company name written into version metadata.
-            product: Optional product name written into version metadata.
+            company_name: Optional company name written into version metadata.
+            product_name: Optional product name written into version metadata.
             description: Optional file description written into version
                 metadata.
             file_version: Optional file version string written into version
@@ -222,11 +231,15 @@ class Builder:
         self.output_exe_path = (
             Path(resolved_output_exe_path) if resolved_output_exe_path is not None else None
         )
-        self.window = window
+        self.visible = _coerce_bool_flag(visible, arg_name="visible")
         self.uac = uac
-        self.icon_path = Path(resolved_icon_path) if resolved_icon_path is not None else None
-        self.company = company
-        self.product = product
+        self.icon_path = (
+            _validate_existing_file_path(resolved_icon_path, arg_name="icon_path")
+            if resolved_icon_path is not None
+            else None
+        )
+        self.company_name = company_name
+        self.product_name = product_name
         self.description = description
         self.file_version = file_version
         self.product_version = product_version
@@ -277,6 +290,11 @@ class Builder:
                 result = Builder(input_bat_path="hello.bat").build()
         """
 
+        target_output_path = self.output_exe_path or self.input_bat_path.with_suffix(".exe")
+        target_output_path.parent.mkdir(parents=True, exist_ok=True)
+        if target_output_path.exists():
+            print(f"Overwriting existing file: {target_output_path}", file=os.sys.stdout)
+
         native = _load_native()
         try:
             payload = native.build(
@@ -284,11 +302,11 @@ class Builder:
                 _normalize_path(self.output_exe_path)
                 if self.output_exe_path is not None
                 else None,
-                window=self.window,
+                visible=self.visible,
                 uac=self.uac,
                 icon_path=_normalize_path(self.icon_path) if self.icon_path is not None else None,
-                company=self.company,
-                product=self.product,
+                company_name=self.company_name,
+                product_name=self.product_name,
                 description=self.description,
                 file_version=self.file_version,
                 product_version=self.product_version,
@@ -489,11 +507,11 @@ def build(
     input_bat_path: Pathish,
     *,
     output_exe_path: Pathish | None = None,
-    window: str = "visible",
+    visible: bool = True,
     uac: bool = False,
     icon_path: Pathish | None = None,
-    company: str | None = None,
-    product: str | None = None,
+    company_name: str | None = None,
+    product_name: str | None = None,
     description: str | None = None,
     file_version: str | None = None,
     product_version: str | None = None,
@@ -515,11 +533,11 @@ def build(
         input_bat_path: Path to the source batch script to embed.
         output_exe_path: Optional output path for the generated executable. When
             omitted, the native builder chooses the destination path.
-        window: Window visibility mode forwarded to the native builder. Common
-            values are `"visible"` and `"hidden"`.
+        visible: Whether the generated executable should show a console window
+            when launched.
         icon_path: Optional path to an `.ico` file embedded into the executable.
-        company: Optional company name written into version metadata.
-        product: Optional product name written into version metadata.
+        company_name: Optional company name written into version metadata.
+        product_name: Optional product name written into version metadata.
         description: Optional file description written into version metadata.
         file_version: Optional file version string written into version
             metadata.
@@ -546,18 +564,18 @@ def build(
             result = build(
                 input_bat_path="scripts/hello.bat",
                 output_exe_path="dist/hello.exe",
-                company="Example Co.",
+                company_name="Example Co.",
             )
     """
 
     return Builder(
         input_bat_path=input_bat_path,
         output_exe_path=output_exe_path,
-        window=window,
+        visible=visible,
         uac=uac,
         icon_path=icon_path,
-        company=company,
-        product=product,
+        company_name=company_name,
+        product_name=product_name,
         description=description,
         file_version=file_version,
         product_version=product_version,

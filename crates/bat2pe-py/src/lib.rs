@@ -27,11 +27,11 @@ fn serialize_json<T: serde::Serialize>(value: &T) -> PyResult<String> {
     input_bat_path,
     output_exe_path = None,
     *,
-    window = "visible",
+    visible = true,
     uac = false,
     icon_path = None,
-    company = None,
-    product = None,
+    company_name = None,
+    product_name = None,
     description = None,
     file_version = None,
     product_version = None,
@@ -43,11 +43,11 @@ fn serialize_json<T: serde::Serialize>(value: &T) -> PyResult<String> {
 fn build(
     input_bat_path: String,
     output_exe_path: Option<String>,
-    window: &str,
+    visible: bool,
     uac: bool,
     icon_path: Option<String>,
-    company: Option<String>,
-    product: Option<String>,
+    company_name: Option<String>,
+    product_name: Option<String>,
     description: Option<String>,
     file_version: Option<String>,
     product_version: Option<String>,
@@ -57,8 +57,8 @@ fn build(
     stub_windows_path: Option<String>,
 ) -> PyResult<String> {
     let mut version_info = VersionInfo::default();
-    version_info.company_name = company;
-    version_info.product_name = product;
+    version_info.company_name = company_name;
+    version_info.product_name = product_name;
     version_info.file_description = description;
     version_info.original_filename = original_filename;
     version_info.internal_name = internal_name;
@@ -74,7 +74,11 @@ fn build(
     let request = BuildRequest {
         input_bat_path: PathBuf::from(input_bat_path),
         output_exe_path: output_exe_path.map(PathBuf::from),
-        window_mode: WindowMode::from_str(window).map_err(to_py_error)?,
+        window_mode: if visible {
+            WindowMode::Visible
+        } else {
+            WindowMode::Hidden
+        },
         uac,
         icon_path: icon_path.map(PathBuf::from),
         version_info,
