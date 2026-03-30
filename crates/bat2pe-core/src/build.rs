@@ -1,5 +1,4 @@
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
 use std::path::Path;
 
 use crate::error::{
@@ -10,8 +9,10 @@ use crate::inspect::inspect_executable;
 use crate::model::{
     BuildRequest, BuildResult, EmbeddedMetadata, IconInfo, RuntimeConfig, ScriptEncoding, StubPaths,
 };
-use crate::overlay::append_overlay;
-use crate::resources::{apply_execution_level_manifest, apply_icon_resource};
+use crate::overlay::write_payload_resources;
+use crate::resources::{
+    apply_execution_level_manifest, apply_icon_resource, apply_version_resource,
+};
 
 const OVERLAY_SCHEMA_VERSION: u32 = 1;
 
@@ -129,10 +130,11 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
     fs::copy(&stub_path, &output_exe_path)
         .map_err(|error| Bat2PeError::io(&output_exe_path, &error))?;
 
+    apply_execution_level_manifest(&output_exe_path, request.uac)?;
+    apply_version_resource(&output_exe_path, &request.version_info)?;
     if let Some(icon_path) = request.icon_path.as_deref() {
         apply_icon_resource(&output_exe_path, icon_path)?;
     }
-    apply_execution_level_manifest(&output_exe_path, request.uac)?;
 
     let metadata = EmbeddedMetadata {
         schema_version: OVERLAY_SCHEMA_VERSION,
@@ -154,14 +156,7 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
         version_info: request.version_info.clone(),
     };
 
-    let mut output = OpenOptions::new()
-        .append(true)
-        .open(&output_exe_path)
-        .map_err(|error| Bat2PeError::io(&output_exe_path, &error))?;
-    append_overlay(&mut output, &metadata, &script_bytes)?;
-    output
-        .flush()
-        .map_err(|error| Bat2PeError::io(&output_exe_path, &error))?;
+    write_payload_resources(&output_exe_path, &metadata, &script_bytes)?;
 
     let inspect = inspect_executable(&output_exe_path)?;
     Ok(BuildResult {

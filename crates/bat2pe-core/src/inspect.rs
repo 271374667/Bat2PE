@@ -2,10 +2,10 @@ use std::path::Path;
 
 use crate::error::Result;
 use crate::model::InspectResult;
-use crate::overlay::read_overlay_from_path;
+use crate::overlay::read_payload_from_path;
 
 pub fn inspect_executable(path: &Path) -> Result<InspectResult> {
-    let overlay = read_overlay_from_path(path)?;
+    let overlay = read_payload_from_path(path)?;
     Ok(InspectResult {
         exe_path: path.to_path_buf(),
         source_script_name: overlay.metadata.source_script_name,

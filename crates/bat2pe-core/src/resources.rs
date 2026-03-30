@@ -2,12 +2,22 @@ use std::fs;
 use std::path::Path;
 
 use crate::error::{Bat2PeError, ERR_INVALID_INPUT, ERR_IO, Result};
+use crate::model::{VersionInfo, VersionTriplet};
 
 const RT_ICON: u16 = 3;
 const RT_GROUP_ICON: u16 = 14;
+const RT_VERSION: u16 = 16;
 const RT_MANIFEST: u16 = 24;
 const GROUP_ICON_RESOURCE_ID: u16 = 1;
 const MANIFEST_RESOURCE_ID: u16 = 1;
+const VERSION_RESOURCE_ID: u16 = 1;
+const VERSION_RESOURCE_LANGUAGE: u16 = 0x0409;
+const VERSION_STRING_LANGUAGE_CODEPAGE: &str = "040904B0";
+const VS_FFI_SIGNATURE: u32 = 0xFEEF04BD;
+const VS_FFI_STRUC_VERSION: u32 = 0x0001_0000;
+const VOS_NT_WINDOWS32: u32 = 0x0004_0004;
+const VFT_APP: u32 = 0x0000_0001;
+const VS_FFI_FILEFLAGSMASK: u32 = 0x0000_003F;
 const AS_INVOKER_MANIFEST: &str = concat!(
     "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
     "<assembly xmlns=\"urn:schemas-microsoft-com:asm.v1\" manifestVersion=\"1.0\">",
@@ -52,6 +62,22 @@ pub fn apply_icon_resource(executable_path: &Path, icon_path: &Path) -> Result<(
 pub fn apply_execution_level_manifest(executable_path: &Path, uac: bool) -> Result<()> {
     let manifest = execution_level_manifest_bytes(uac);
     apply_manifest_resource(executable_path, manifest)
+}
+
+pub fn apply_version_resource(executable_path: &Path, version_info: &VersionInfo) -> Result<()> {
+    if !has_version_resource_data(version_info) {
+        return Ok(());
+    }
+
+    let bytes = build_version_resource_bytes(version_info)?;
+    apply_binary_resource(
+        executable_path,
+        RT_VERSION,
+        VERSION_RESOURCE_ID,
+        VERSION_RESOURCE_LANGUAGE,
+        &bytes,
+        "version resource",
+    )
 }
 
 impl ParsedIcoFile {
@@ -196,56 +222,14 @@ fn execution_level_manifest_bytes(uac: bool) -> &'static [u8] {
 
 #[cfg(windows)]
 fn apply_manifest_resource(executable_path: &Path, manifest: &[u8]) -> Result<()> {
-    use windows_sys::Win32::System::LibraryLoader::{
-        BeginUpdateResourceW, EndUpdateResourceW, UpdateResourceW,
-    };
-
-    let executable_path_wide = to_wide(executable_path);
-    let update_handle = unsafe { BeginUpdateResourceW(executable_path_wide.as_ptr(), 0) };
-    if update_handle.is_null() {
-        return Err(win32_error(
-            executable_path,
-            "failed to begin updating executable resources",
-        ));
-    }
-
-    let update_result = (|| {
-        let manifest_size: u32 = manifest
-            .len()
-            .try_into()
-            .map_err(|_| Bat2PeError::new(ERR_INVALID_INPUT, "manifest resource is too large"))?;
-
-        let updated = unsafe {
-            UpdateResourceW(
-                update_handle,
-                make_int_resource(RT_MANIFEST),
-                make_int_resource(MANIFEST_RESOURCE_ID),
-                0,
-                manifest.as_ptr().cast_mut().cast(),
-                manifest_size,
-            )
-        };
-        if updated == 0 {
-            return Err(win32_error(
-                executable_path,
-                "failed to write execution manifest resource",
-            ));
-        }
-
-        Ok(())
-    })();
-
-    let discard_changes = i32::from(update_result.is_err());
-    let finalized = unsafe { EndUpdateResourceW(update_handle, discard_changes) };
-    if finalized == 0 {
-        let finalize_error =
-            win32_error(executable_path, "failed to finalize executable resources");
-        if update_result.is_ok() {
-            return Err(finalize_error);
-        }
-    }
-
-    update_result
+    apply_binary_resource(
+        executable_path,
+        RT_MANIFEST,
+        MANIFEST_RESOURCE_ID,
+        0,
+        manifest,
+        "execution manifest resource",
+    )
 }
 
 #[cfg(not(windows))]
@@ -336,6 +320,280 @@ fn apply_icon_resource_from_parsed(executable_path: &Path, parsed: &ParsedIcoFil
     update_result
 }
 
+fn has_version_resource_data(version_info: &VersionInfo) -> bool {
+    version_info.company_name.is_some()
+        || version_info.product_name.is_some()
+        || version_info.file_description.is_some()
+        || version_info.file_version.is_some()
+        || version_info.product_version.is_some()
+        || version_info.original_filename.is_some()
+        || version_info.internal_name.is_some()
+}
+
+fn build_version_resource_bytes(version_info: &VersionInfo) -> Result<Vec<u8>> {
+    let fixed_info = build_fixed_file_info_bytes(version_info);
+    let mut children = Vec::new();
+
+    let string_entries = version_string_entries(version_info);
+    if !string_entries.is_empty() {
+        let string_children: Result<Vec<Vec<u8>>> = string_entries
+            .iter()
+            .map(|(key, value)| build_string_block(key, value))
+            .collect();
+        let string_table = build_version_block(
+            VERSION_STRING_LANGUAGE_CODEPAGE,
+            0,
+            1,
+            &[],
+            &string_children?,
+        )?;
+        children.push(build_version_block(
+            "StringFileInfo",
+            0,
+            1,
+            &[],
+            &[string_table],
+        )?);
+    }
+
+    let translation = build_translation_value_bytes(&[(VERSION_RESOURCE_LANGUAGE, 0x04B0)]);
+    let var = build_version_block(
+        "Translation",
+        u16::try_from(translation.len()).map_err(|_| {
+            Bat2PeError::new(ERR_INVALID_INPUT, "translation resource is too large")
+        })?,
+        0,
+        &translation,
+        &[],
+    )?;
+    children.push(build_version_block("VarFileInfo", 0, 1, &[], &[var])?);
+
+    build_version_block(
+        "VS_VERSION_INFO",
+        u16::try_from(fixed_info.len())
+            .map_err(|_| Bat2PeError::new(ERR_INVALID_INPUT, "fixed version info is too large"))?,
+        0,
+        &fixed_info,
+        &children,
+    )
+}
+
+fn build_fixed_file_info_bytes(version_info: &VersionInfo) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(13 * std::mem::size_of::<u32>());
+    let file_version = version_info.file_version.clone().unwrap_or(VersionTriplet {
+        major: 0,
+        minor: 0,
+        patch: 0,
+    });
+    let product_version = version_info
+        .product_version
+        .clone()
+        .unwrap_or(VersionTriplet {
+            major: 0,
+            minor: 0,
+            patch: 0,
+        });
+
+    push_u32(&mut bytes, VS_FFI_SIGNATURE);
+    push_u32(&mut bytes, VS_FFI_STRUC_VERSION);
+    push_u32(
+        &mut bytes,
+        ((file_version.major as u32) << 16) | file_version.minor as u32,
+    );
+    push_u32(&mut bytes, (file_version.patch as u32) << 16);
+    push_u32(
+        &mut bytes,
+        ((product_version.major as u32) << 16) | product_version.minor as u32,
+    );
+    push_u32(&mut bytes, (product_version.patch as u32) << 16);
+    push_u32(&mut bytes, VS_FFI_FILEFLAGSMASK);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, VOS_NT_WINDOWS32);
+    push_u32(&mut bytes, VFT_APP);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 0);
+    bytes
+}
+
+fn version_string_entries(version_info: &VersionInfo) -> Vec<(&'static str, String)> {
+    let mut entries = Vec::new();
+
+    if let Some(value) = &version_info.company_name {
+        entries.push(("CompanyName", value.clone()));
+    }
+    if let Some(value) = &version_info.file_description {
+        entries.push(("FileDescription", value.clone()));
+    }
+    if let Some(value) = &version_info.file_version {
+        entries.push(("FileVersion", value.to_string()));
+    }
+    if let Some(value) = &version_info.internal_name {
+        entries.push(("InternalName", value.clone()));
+    }
+    if let Some(value) = &version_info.original_filename {
+        entries.push(("OriginalFilename", value.clone()));
+    }
+    if let Some(value) = &version_info.product_name {
+        entries.push(("ProductName", value.clone()));
+    }
+    if let Some(value) = &version_info.product_version {
+        entries.push(("ProductVersion", value.to_string()));
+    }
+
+    entries
+}
+
+fn build_string_block(key: &str, value: &str) -> Result<Vec<u8>> {
+    let value_utf16 = utf16_bytes_with_nul(value);
+    build_version_block(
+        key,
+        u16::try_from(value_utf16.len() / 2)
+            .map_err(|_| Bat2PeError::new(ERR_INVALID_INPUT, "version string is too long"))?,
+        1,
+        &value_utf16,
+        &[],
+    )
+}
+
+fn build_translation_value_bytes(translations: &[(u16, u16)]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(translations.len() * 4);
+    for (language, codepage) in translations {
+        push_u16(&mut bytes, *language);
+        push_u16(&mut bytes, *codepage);
+    }
+    bytes
+}
+
+fn build_version_block(
+    key: &str,
+    value_length: u16,
+    value_type: u16,
+    value_bytes: &[u8],
+    children: &[Vec<u8>],
+) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    push_u16(&mut bytes, 0);
+    push_u16(&mut bytes, value_length);
+    push_u16(&mut bytes, value_type);
+    bytes.extend_from_slice(&utf16_bytes_with_nul(key));
+    align_dword(&mut bytes);
+    bytes.extend_from_slice(value_bytes);
+    align_dword(&mut bytes);
+    for child in children {
+        bytes.extend_from_slice(child);
+    }
+
+    let block_length: u16 = bytes
+        .len()
+        .try_into()
+        .map_err(|_| Bat2PeError::new(ERR_INVALID_INPUT, "version resource block is too large"))?;
+    write_u16_at(&mut bytes, 0, block_length);
+    Ok(bytes)
+}
+
+fn utf16_bytes_with_nul(value: &str) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for code_unit in value.encode_utf16().chain(std::iter::once(0)) {
+        push_u16(&mut bytes, code_unit);
+    }
+    bytes
+}
+
+fn align_dword(bytes: &mut Vec<u8>) {
+    while bytes.len() % 4 != 0 {
+        bytes.push(0);
+    }
+}
+
+fn push_u16(bytes: &mut Vec<u8>, value: u16) {
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_u32(bytes: &mut Vec<u8>, value: u32) {
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn write_u16_at(bytes: &mut [u8], offset: usize, value: u16) {
+    bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+}
+
+#[cfg(windows)]
+fn apply_binary_resource(
+    executable_path: &Path,
+    resource_type: u16,
+    resource_id: u16,
+    language: u16,
+    bytes: &[u8],
+    label: &str,
+) -> Result<()> {
+    use windows_sys::Win32::System::LibraryLoader::{
+        BeginUpdateResourceW, EndUpdateResourceW, UpdateResourceW,
+    };
+
+    let executable_path_wide = to_wide(executable_path);
+    let update_handle = unsafe { BeginUpdateResourceW(executable_path_wide.as_ptr(), 0) };
+    if update_handle.is_null() {
+        return Err(win32_error(
+            executable_path,
+            "failed to begin updating executable resources",
+        ));
+    }
+
+    let update_result = (|| {
+        let size: u32 = bytes
+            .len()
+            .try_into()
+            .map_err(|_| Bat2PeError::new(ERR_INVALID_INPUT, format!("{label} is too large")))?;
+
+        let updated = unsafe {
+            UpdateResourceW(
+                update_handle,
+                make_int_resource(resource_type),
+                make_int_resource(resource_id),
+                language,
+                bytes.as_ptr().cast_mut().cast(),
+                size,
+            )
+        };
+        if updated == 0 {
+            return Err(win32_error(
+                executable_path,
+                format!("failed to write {label}"),
+            ));
+        }
+
+        Ok(())
+    })();
+
+    let discard_changes = i32::from(update_result.is_err());
+    let finalized = unsafe { EndUpdateResourceW(update_handle, discard_changes) };
+    if finalized == 0 {
+        let finalize_error =
+            win32_error(executable_path, "failed to finalize executable resources");
+        if update_result.is_ok() {
+            return Err(finalize_error);
+        }
+    }
+
+    update_result
+}
+
+#[cfg(not(windows))]
+fn apply_binary_resource(
+    _executable_path: &Path,
+    _resource_type: u16,
+    _resource_id: u16,
+    _language: u16,
+    _bytes: &[u8],
+    _label: &str,
+) -> Result<()> {
+    Err(Bat2PeError::new(
+        ERR_INVALID_INPUT,
+        "resource updates are only supported on Windows",
+    ))
+}
+
 #[cfg(not(windows))]
 fn apply_icon_resource_from_parsed(_executable_path: &Path, _parsed: &ParsedIcoFile) -> Result<()> {
     Err(Bat2PeError::new(
@@ -370,7 +628,8 @@ fn win32_error(path: &Path, message: impl Into<String>) -> Bat2PeError {
 
 #[cfg(test)]
 mod tests {
-    use super::execution_level_manifest_bytes;
+    use super::{build_version_resource_bytes, execution_level_manifest_bytes};
+    use crate::model::{VersionInfo, VersionTriplet};
 
     #[test]
     fn uses_as_invoker_manifest_when_uac_is_disabled() {
@@ -386,5 +645,41 @@ mod tests {
             .expect("manifest should be utf-8");
         assert!(manifest.contains("requestedExecutionLevel"));
         assert!(manifest.contains("requireAdministrator"));
+    }
+
+    #[test]
+    fn version_resource_contains_expected_strings() {
+        let bytes = build_version_resource_bytes(&VersionInfo {
+            company_name: Some("Acme".to_string()),
+            product_name: Some("Bat2PE".to_string()),
+            file_description: Some("Batch launcher".to_string()),
+            file_version: Some(VersionTriplet {
+                major: 1,
+                minor: 2,
+                patch: 3,
+            }),
+            product_version: Some(VersionTriplet {
+                major: 4,
+                minor: 5,
+                patch: 6,
+            }),
+            original_filename: Some("bat2pe.exe".to_string()),
+            internal_name: Some("bat2pe".to_string()),
+        })
+        .expect("version resource");
+
+        let utf16 = String::from_utf16_lossy(
+            &bytes
+                .chunks_exact(2)
+                .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+                .collect::<Vec<_>>(),
+        );
+        assert!(utf16.contains("VS_VERSION_INFO"));
+        assert!(utf16.contains("CompanyName"));
+        assert!(utf16.contains("Acme"));
+        assert!(utf16.contains("FileVersion"));
+        assert!(utf16.contains("1.2.3"));
+        assert!(utf16.contains("ProductVersion"));
+        assert!(utf16.contains("4.5.6"));
     }
 }

@@ -23,7 +23,7 @@ mod imp {
 
     use crate::error::{Bat2PeError, ERR_DIRECTORY_NOT_WRITABLE, ERR_INVALID_EXECUTABLE, Result};
     use crate::model::WindowMode;
-    use crate::overlay::read_overlay_from_path;
+    use crate::overlay::read_payload_from_path;
 
     pub fn run_console() -> Result<i32> {
         if is_cleanup_helper_invocation() {
@@ -66,7 +66,7 @@ mod imp {
             )
             .with_details(error.to_string())
         })?;
-        let overlay = read_overlay_from_path(&exe_path)?;
+        let overlay = read_payload_from_path(&exe_path)?;
         let exe_directory = exe_path.parent().ok_or_else(|| {
             Bat2PeError::new(
                 ERR_INVALID_EXECUTABLE,

@@ -6,6 +6,24 @@ import json
 from pathlib import Path
 
 
+class _VSFixedFileInfo(ctypes.Structure):
+    _fields_ = [
+        ("dwSignature", ctypes.c_uint32),
+        ("dwStrucVersion", ctypes.c_uint32),
+        ("dwFileVersionMS", ctypes.c_uint32),
+        ("dwFileVersionLS", ctypes.c_uint32),
+        ("dwProductVersionMS", ctypes.c_uint32),
+        ("dwProductVersionLS", ctypes.c_uint32),
+        ("dwFileFlagsMask", ctypes.c_uint32),
+        ("dwFileFlags", ctypes.c_uint32),
+        ("dwFileOS", ctypes.c_uint32),
+        ("dwFileType", ctypes.c_uint32),
+        ("dwFileSubtype", ctypes.c_uint32),
+        ("dwFileDateMS", ctypes.c_uint32),
+        ("dwFileDateLS", ctypes.c_uint32),
+    ]
+
+
 def _extract_icon_count(executable_path: Path) -> int:
     shell32 = ctypes.WinDLL("shell32", use_last_error=True)
     shell32.ExtractIconExW.argtypes = [
@@ -64,6 +82,80 @@ def _extract_execution_level(executable_path: Path) -> str:
     if "asInvoker" in manifest:
         return "asInvoker"
     raise AssertionError(f"unexpected manifest payload: {manifest}")
+
+
+def _load_version_blob(executable_path: Path) -> ctypes.Array[ctypes.c_ubyte]:
+    version = ctypes.WinDLL("version", use_last_error=True)
+    version.GetFileVersionInfoSizeW.argtypes = [ctypes.c_wchar_p, ctypes.c_void_p]
+    version.GetFileVersionInfoSizeW.restype = ctypes.c_uint32
+    version.GetFileVersionInfoW.argtypes = [
+        ctypes.c_wchar_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+    ]
+    version.GetFileVersionInfoW.restype = ctypes.c_int
+
+    size = version.GetFileVersionInfoSizeW(str(executable_path), None)
+    if size == 0:
+        raise OSError(ctypes.get_last_error(), f"missing version resource in {executable_path}")
+
+    buffer = (ctypes.c_ubyte * size)()
+    ok = version.GetFileVersionInfoW(str(executable_path), 0, size, ctypes.byref(buffer))
+    if not ok:
+        raise OSError(ctypes.get_last_error(), f"failed to load version resource from {executable_path}")
+
+    return buffer
+
+
+def _query_version_value(buffer: ctypes.Array[ctypes.c_ubyte], sub_block: str) -> tuple[ctypes.c_void_p, int]:
+    version = ctypes.WinDLL("version", use_last_error=True)
+    version.VerQueryValueW.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_wchar_p,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_uint32),
+    ]
+    version.VerQueryValueW.restype = ctypes.c_int
+
+    value_ptr = ctypes.c_void_p()
+    value_len = ctypes.c_uint32()
+    ok = version.VerQueryValueW(
+        ctypes.byref(buffer),
+        sub_block,
+        ctypes.byref(value_ptr),
+        ctypes.byref(value_len),
+    )
+    if not ok:
+        raise OSError(ctypes.get_last_error(), f"missing version sub-block {sub_block!r}")
+
+    return value_ptr, int(value_len.value)
+
+
+def _read_version_string(executable_path: Path, key: str) -> str:
+    buffer = _load_version_blob(executable_path)
+    value_ptr, _ = _query_version_value(buffer, rf"\StringFileInfo\040904B0\{key}")
+    return ctypes.wstring_at(value_ptr)
+
+
+def _read_fixed_version(executable_path: Path, kind: str) -> tuple[int, int, int]:
+    buffer = _load_version_blob(executable_path)
+    value_ptr, value_len = _query_version_value(buffer, "\\")
+    assert value_len >= ctypes.sizeof(_VSFixedFileInfo)
+    info = ctypes.cast(value_ptr, ctypes.POINTER(_VSFixedFileInfo)).contents
+
+    if kind == "file":
+        major_minor = info.dwFileVersionMS
+        patch_build = info.dwFileVersionLS
+    else:
+        major_minor = info.dwProductVersionMS
+        patch_build = info.dwProductVersionLS
+
+    return (
+        (major_minor >> 16) & 0xFFFF,
+        major_minor & 0xFFFF,
+        (patch_build >> 16) & 0xFFFF,
+    )
 
 
 def test_cli_help_smoke(cli_runner) -> None:
@@ -163,6 +255,15 @@ def test_cli_build_and_inspect_returns_full_metadata(
         "minor": 5,
         "patch": 6,
     }
+    assert _read_version_string(output, "CompanyName") == "Acme"
+    assert _read_version_string(output, "ProductName") == "Runner"
+    assert _read_version_string(output, "FileDescription") == "CLI metadata test"
+    assert _read_version_string(output, "OriginalFilename") == "launcher.exe"
+    assert _read_version_string(output, "InternalName") == "launcher"
+    assert _read_version_string(output, "FileVersion") == "1.2.3"
+    assert _read_version_string(output, "ProductVersion") == "4.5.6"
+    assert _read_fixed_version(output, "file") == (1, 2, 3)
+    assert _read_fixed_version(output, "product") == (4, 5, 6)
 
     inspect = cli_runner("inspect", "--exe-path", output)
     assert inspect.returncode == 0, inspect.stderr
@@ -305,7 +406,7 @@ def test_cli_rejects_conflicting_verbosity_and_invalid_inputs(
     invalid_exe.write_text("plain text", encoding="utf-8")
     inspect = cli_runner("inspect", "--exe-path", invalid_exe)
     assert inspect.returncode == 1
-    assert "bat2pe overlay" in inspect.stderr
+    assert "failed to load executable as a data file" in inspect.stderr
 
 
 def test_cli_verify_matches_args_and_working_directory(cli_runner, test_dir: Path) -> None:
