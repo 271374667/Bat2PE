@@ -3,8 +3,7 @@ resolver = "3"
 members = [
   "crates/bat2pe-core",
   "crates/bat2pe-cli",
-  "crates/bat2pe-stub-console",
-  "crates/bat2pe-stub-windows",
+  "crates/bat2pe-runtime-host",
   "crates/bat2pe-py",
 ]
 default-members = ["crates/bat2pe-cli"]

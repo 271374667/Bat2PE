@@ -42,7 +42,7 @@ def test_compile_script_supports_debug_profile(
     assert args.debug is True
 
 
-def test_compile_script_syncs_python_artifacts_without_packaged_cli(
+def test_compile_script_syncs_python_artifacts_without_creating_bin_dir(
     repo_root: Path,
     test_dir: Path,
     monkeypatch,
@@ -52,7 +52,6 @@ def test_compile_script_syncs_python_artifacts_without_packaged_cli(
     package_dir = test_dir / "python" / "bat2pe"
     bin_dir = package_dir / "bin"
     package_dir.mkdir(parents=True)
-    bin_dir.mkdir()
     unlinked: list[str] = []
 
     class PackageDirProxy:
@@ -76,9 +75,6 @@ def test_compile_script_syncs_python_artifacts_without_packaged_cli(
     native_dll = output_dir / "bat2pe_py.dll"
     cli_exe.write_bytes(b"cli")
     native_dll.write_bytes(b"native")
-    (bin_dir / "bat2pe.exe").write_bytes(b"old-cli")
-    (bin_dir / "bat2pe-stub-console.exe").write_bytes(b"old-console")
-    (bin_dir / "bat2pe-stub-windows.exe").write_bytes(b"old-windows")
 
     monkeypatch.setattr(module, "PYTHON_PACKAGE_DIR", PackageDirProxy(package_dir))
     monkeypatch.setattr(module, "PYTHON_BIN_DIR", bin_dir)
@@ -86,6 +82,7 @@ def test_compile_script_syncs_python_artifacts_without_packaged_cli(
     summary = module.sync_artifacts(module.BuildLayout(profile="release", target_dir=target_dir))
 
     assert (package_dir / "_native.pyd").read_bytes() == b"native"
+    assert not bin_dir.exists()
     assert not (bin_dir / "bat2pe.exe").exists()
     assert not (bin_dir / "bat2pe-stub-console.exe").exists()
     assert not (bin_dir / "bat2pe-stub-windows.exe").exists()

@@ -29,7 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Build all bat2pe artifacts, defaulting to release-grade outputs for "
-            "the Rust CLI/runtime host and the Python native extension."
+            "the standalone Rust CLI and the Python native extension."
         )
     )
     parser.add_argument(
@@ -76,9 +76,10 @@ def build_all(layout: BuildLayout) -> None:
     if layout.profile == "release":
         command.append("--release")
     run(command)
+
+
 def sync_artifacts(layout: BuildLayout) -> dict[str, str]:
     output_dir = layout.output_dir
-    PYTHON_BIN_DIR.mkdir(parents=True, exist_ok=True)
 
     cli_exe = output_dir / "bat2pe.exe"
     native_dll = output_dir / "bat2pe_py.dll"
@@ -93,11 +94,13 @@ def sync_artifacts(layout: BuildLayout) -> dict[str, str]:
         old_pyd.unlink()
 
     python_native = PYTHON_PACKAGE_DIR / "_native.pyd"
-    python_cli_exe = PYTHON_BIN_DIR / cli_exe.name
     shutil.copy2(native_dll, python_native)
-    shutil.copy2(cli_exe, python_cli_exe)
 
-    for stale_name in ("bat2pe-stub-console.exe", "bat2pe-stub-windows.exe"):
+    for stale_name in (
+        "bat2pe.exe",
+        "bat2pe-stub-console.exe",
+        "bat2pe-stub-windows.exe",
+    ):
         stale_path = PYTHON_BIN_DIR / stale_name
         if stale_path.exists():
             stale_path.unlink()
@@ -105,7 +108,6 @@ def sync_artifacts(layout: BuildLayout) -> dict[str, str]:
     return {
         "cli_exe_built": str(cli_exe),
         "python_native": str(python_native),
-        "python_cli_exe": str(python_cli_exe),
     }
 
 
