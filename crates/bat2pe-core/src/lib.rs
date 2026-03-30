@@ -19,8 +19,8 @@ pub use error::{
 pub use inspect::inspect_executable;
 pub use model::{
     BuildRequest, BuildResult, EmbeddedMetadata, IconInfo, InspectResult, RuntimeConfig,
-    ScriptEncoding, VerifyExecution, VerifyRequest, VerifyResult, VersionInfo, VersionTriplet,
-    WindowMode,
+    ScriptEncoding, TemplateExecutable, VerifyExecution, VerifyRequest, VerifyResult, VersionInfo,
+    VersionTriplet, WindowMode,
 };
 pub use runtime::{maybe_run_current_executable, run_console_stub, run_windows_stub};
 pub use verify::verify;

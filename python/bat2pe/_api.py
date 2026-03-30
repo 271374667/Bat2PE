@@ -73,27 +73,6 @@ def _validate_existing_file_path(value: Pathish, *, arg_name: str) -> Path:
     return path
 
 
-def _candidate_template_executable_paths() -> list[Path]:
-    """Build the ordered list of bat2pe template executable locations to probe."""
-
-    package_dir = Path(__file__).resolve().parent
-    repo_root = package_dir.parents[1]
-    return [
-        package_dir / "bin" / "bat2pe.exe",
-        repo_root / "target" / "debug" / "bat2pe.exe",
-        repo_root / "target" / "release" / "bat2pe.exe",
-    ]
-
-
-def _find_template_executable() -> str | None:
-    """Return the first existing bat2pe template executable."""
-
-    for candidate in _candidate_template_executable_paths():
-        if candidate.exists():
-            return str(candidate)
-    return None
-
-
 def _resolve_alias(
     preferred_value,
     legacy_value,
@@ -259,7 +238,6 @@ class Builder:
                 product_version=self.product_version,
                 original_filename=self.original_filename,
                 internal_name=self.internal_name,
-                template_executable_path=_find_template_executable(),
             )
         except Exception as exc:  # noqa: BLE001
             raise map_native_error(exc, BuildError) from exc

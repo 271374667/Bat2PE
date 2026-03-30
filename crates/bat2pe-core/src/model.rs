@@ -1,5 +1,6 @@
 use std::ffi::OsString;
 use std::fmt::{self, Display, Formatter};
+use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -136,10 +137,28 @@ impl Default for RuntimeConfig {
 }
 
 #[derive(Debug, Clone)]
+pub enum TemplateExecutable {
+    Path(PathBuf),
+    Embedded {
+        logical_path: PathBuf,
+        bytes: &'static [u8],
+    },
+}
+
+impl TemplateExecutable {
+    pub fn logical_path(&self) -> &Path {
+        match self {
+            Self::Path(path) => path.as_path(),
+            Self::Embedded { logical_path, .. } => logical_path.as_path(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct BuildRequest {
     pub input_bat_path: PathBuf,
     pub output_exe_path: Option<PathBuf>,
-    pub template_executable_path: PathBuf,
+    pub template_executable: TemplateExecutable,
     pub window_mode: WindowMode,
     pub uac: bool,
     pub icon_path: Option<PathBuf>,

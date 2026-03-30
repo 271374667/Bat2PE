@@ -8,6 +8,7 @@ use crate::error::{
 use crate::inspect::inspect_executable;
 use crate::model::{
     BuildRequest, BuildResult, EmbeddedMetadata, IconInfo, RuntimeConfig, ScriptEncoding,
+    TemplateExecutable,
 };
 use crate::overlay::write_payload_resources;
 use crate::resources::{
@@ -91,12 +92,14 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
         .clone()
         .unwrap_or(derive_output_exe_path(&request.input_bat_path)?);
 
-    if !request.template_executable_path.exists() {
-        return Err(Bat2PeError::new(
-            ERR_RESOURCE_NOT_FOUND,
-            "bat2pe template executable was not found",
-        )
-        .with_path(request.template_executable_path.clone()));
+    if let TemplateExecutable::Path(path) = &request.template_executable {
+        if !path.exists() {
+            return Err(Bat2PeError::new(
+                ERR_RESOURCE_NOT_FOUND,
+                "bat2pe template executable was not found",
+            )
+            .with_path(path.clone()));
+        }
     }
 
     if !request.overwrite && output_exe_path.exists() {
@@ -113,8 +116,7 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
         .map(load_icon_info)
         .transpose()?;
 
-    fs::copy(&request.template_executable_path, &output_exe_path)
-        .map_err(|error| Bat2PeError::io(&output_exe_path, &error))?;
+    write_template_executable(&request.template_executable, &output_exe_path)?;
 
     apply_executable_subsystem(&output_exe_path, request.window_mode)?;
     apply_execution_level_manifest(&output_exe_path, request.uac)?;
@@ -148,13 +150,31 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
     let inspect = inspect_executable(&output_exe_path)?;
     Ok(BuildResult {
         output_exe_path,
-        template_executable_path: request.template_executable_path.clone(),
+        template_executable_path: request.template_executable.logical_path().to_path_buf(),
         script_encoding,
         script_length: script_bytes.len() as u64,
         window_mode: request.window_mode,
         uac: request.uac,
         inspect,
     })
+}
+
+fn write_template_executable(
+    template_executable: &TemplateExecutable,
+    output_exe_path: &Path,
+) -> Result<()> {
+    match template_executable {
+        TemplateExecutable::Path(path) => {
+            fs::copy(path, output_exe_path)
+                .map_err(|error| Bat2PeError::io(output_exe_path, &error))?;
+        }
+        TemplateExecutable::Embedded { bytes, .. } => {
+            fs::write(output_exe_path, bytes)
+                .map_err(|error| Bat2PeError::io(output_exe_path, &error))?;
+        }
+    }
+
+    Ok(())
 }
 
 fn normalized_script_extension(path: &Path) -> Result<String> {

@@ -151,7 +151,9 @@ fn run_build(args: Vec<OsString>) -> Result<i32> {
     let request = BuildRequest {
         input_bat_path: input_bat_path.ok_or_else(|| usage_error("missing input bat path"))?,
         output_exe_path,
-        template_executable_path: locate_template_executable(&current_exe)?,
+        template_executable: bat2pe_core::TemplateExecutable::Path(locate_template_executable(
+            &current_exe,
+        )?),
         window_mode,
         uac,
         icon_path,

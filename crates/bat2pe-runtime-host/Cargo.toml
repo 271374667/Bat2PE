@@ -1,16 +1,9 @@
 [package]
-name = "bat2pe-py"
+name = "bat2pe-runtime-host"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-build = "build.rs"
-
-[lib]
-crate-type = ["cdylib"]
 
 [dependencies]
 bat2pe-core = { path = "../bat2pe-core" }
-pyo3.workspace = true
-serde.workspace = true
-serde_json.workspace = true

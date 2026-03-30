@@ -165,7 +165,7 @@ def _read_fixed_version(executable_path: Path, kind: str) -> tuple[int, int, int
 def test_build_result_from_dict() -> None:
     payload = {
         "output_exe_path": "dist/demo.exe",
-        "template_executable_path": "python/bat2pe/bin/bat2pe.exe",
+        "template_executable_path": "embedded-bat2pe-runtime-host.exe",
         "script_encoding": "utf8",
         "script_length": 12,
         "window_mode": "visible",
@@ -290,7 +290,7 @@ def test_python_builder_inspector_verifier_roundtrip(
     build_result = builder.build()
 
     assert build_result.output_exe_path == output
-    assert build_result.template_executable_path.name == "bat2pe.exe"
+    assert build_result.template_executable_path.name == "embedded-bat2pe-runtime-host.exe"
     assert build_result.script_encoding == "utf8"
     assert build_result.uac is False
     assert build_result.inspect.source_extension == ".cmd"
@@ -496,22 +496,21 @@ def test_python_builder_creates_missing_output_parent_directory(
     assert output.exists()
 
 
-def test_python_api_reports_missing_template_executable(
+def test_python_api_builds_without_packaged_template_executable(
     bat2pe_module,
-    monkeypatch: pytest.MonkeyPatch,
     test_dir: Path,
 ) -> None:
-    script = test_dir / "missing_template.bat"
+    package_dir = Path(bat2pe_module.__file__).resolve().parent
+    assert not (package_dir / "bin" / "bat2pe.exe").exists()
+
+    script = test_dir / "embedded_template.bat"
     script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
+    output = test_dir / "embedded_template.exe"
 
-    monkeypatch.delenv("BAT2PE_TEMPLATE_EXE", raising=False)
-    monkeypatch.delenv("BAT2PE_HOST_EXE", raising=False)
-    monkeypatch.setattr("bat2pe._api._find_template_executable", lambda: None)
+    result = bat2pe_module.build(
+        input_bat_path=script,
+        output_exe_path=output,
+    )
 
-    with pytest.raises(bat2pe_module.BuildError) as build_error:
-        bat2pe_module.build(
-            input_bat_path=script,
-            output_exe_path=test_dir / "missing_template.exe",
-        )
-
-    assert build_error.value.code == 103
+    assert result.output_exe_path == output
+    assert output.exists()

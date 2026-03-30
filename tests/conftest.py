@@ -205,9 +205,6 @@ def bat2pe_module(
 
     native_target = package_dir / "_native.pyd"
     shutil.copy2(build_artifacts.native_library, native_target)
-    bin_dir = package_dir / "bin"
-    bin_dir.mkdir(exist_ok=True)
-    shutil.copy2(build_artifacts.cli_exe, bin_dir / "bat2pe.exe")
 
     sys.path.insert(0, str(package_root))
     os.environ.pop("BAT2PE_STUB_CONSOLE", None)

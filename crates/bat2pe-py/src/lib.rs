@@ -5,12 +5,16 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use bat2pe_core::{
-    Bat2PeError, BuildRequest, ERR_RESOURCE_NOT_FOUND, VerifyRequest, VersionInfo, VersionTriplet,
-    WindowMode, build_executable, inspect_executable, locate_template_executable, verify,
+    Bat2PeError, BuildRequest, TemplateExecutable, VerifyRequest, VersionInfo, VersionTriplet,
+    WindowMode, build_executable, inspect_executable, verify,
 };
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::PyModule;
+
+const EMBEDDED_RUNTIME_HOST_BYTES: &[u8] =
+    include_bytes!(env!("BAT2PE_EMBEDDED_RUNTIME_HOST_PATH"));
+const EMBEDDED_RUNTIME_HOST_LABEL: &str = env!("BAT2PE_EMBEDDED_RUNTIME_HOST_LABEL");
 
 fn to_py_error(error: Bat2PeError) -> PyErr {
     PyRuntimeError::new_err(error.to_json_string())
@@ -36,8 +40,7 @@ fn serialize_json<T: serde::Serialize>(value: &T) -> PyResult<String> {
     file_version = None,
     product_version = None,
     original_filename = None,
-    internal_name = None,
-    template_executable_path = None
+    internal_name = None
 ))]
 fn build(
     input_bat_path: String,
@@ -52,7 +55,6 @@ fn build(
     product_version: Option<String>,
     original_filename: Option<String>,
     internal_name: Option<String>,
-    template_executable_path: Option<String>,
 ) -> PyResult<String> {
     let mut version_info = VersionInfo::default();
     version_info.company_name = company_name;
@@ -72,8 +74,10 @@ fn build(
     let request = BuildRequest {
         input_bat_path: PathBuf::from(input_bat_path),
         output_exe_path: output_exe_path.map(PathBuf::from),
-        template_executable_path: resolve_template_executable_path(template_executable_path)
-            .map_err(to_py_error)?,
+        template_executable: TemplateExecutable::Embedded {
+            logical_path: PathBuf::from(EMBEDDED_RUNTIME_HOST_LABEL),
+            bytes: EMBEDDED_RUNTIME_HOST_BYTES,
+        },
         window_mode: if visible {
             WindowMode::Visible
         } else {
@@ -115,22 +119,6 @@ fn verify_pair(
     };
     let result = verify(&request).map_err(to_py_error)?;
     serialize_json(&result)
-}
-
-fn resolve_template_executable_path(
-    template_executable_path: Option<String>,
-) -> Result<PathBuf, Bat2PeError> {
-    let template_executable_path = template_executable_path
-        .or_else(|| std::env::var("BAT2PE_TEMPLATE_EXE").ok())
-        .or_else(|| std::env::var("BAT2PE_HOST_EXE").ok())
-        .ok_or_else(|| {
-            Bat2PeError::new(
-                ERR_RESOURCE_NOT_FOUND,
-                "missing bat2pe template executable; provide template_executable_path or BAT2PE_TEMPLATE_EXE",
-            )
-        })?;
-
-    locate_template_executable(PathBuf::from(template_executable_path).as_path())
 }
 
 #[pymodule]
