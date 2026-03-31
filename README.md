@@ -9,7 +9,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-success.svg)](#highlights)
 [![License](https://img.shields.io/badge/license-MPL--2.0-green.svg)](LICENSE)
 
-[English README](README.md) | [中文说明](README_CN.md) | [Python API](docs/python-api.md) | [Project Plan](docs/rust-bat2exe-tool-plan.md)
+[English README](README.md) | [中文说明](README_CN.md) | [Python API](docs/python-api.md) 
 
 **Convert `.bat` / `.cmd` scripts to standalone `.exe` via CLI or Python module**  
 **Fully compatible runtime behavior, custom icon & metadata, UAC elevation, passes Kaspersky and common AV scans, zero runtime dependencies**
