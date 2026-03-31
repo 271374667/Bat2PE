@@ -96,7 +96,7 @@ fn run_build(args: Vec<OsString>) -> Result<i32> {
     let mut output_exe_path: Option<PathBuf> = None;
     let mut icon_path: Option<PathBuf> = None;
     let mut version_info = VersionInfo::default();
-    let mut window_mode = WindowMode::Visible;
+    let mut window_mode = WindowMode::Hidden;
     let mut uac = false;
     let mut quiet = false;
 
@@ -159,13 +159,8 @@ fn run_build(args: Vec<OsString>) -> Result<i32> {
                 index += 2;
             }
             "--visible" => {
-                let value = expect_string_value(&args, index + 1, "--visible")?;
-                window_mode = if parse_bool_flag(&value, "--visible")? {
-                    WindowMode::Visible
-                } else {
-                    WindowMode::Hidden
-                };
-                index += 2;
+                window_mode = WindowMode::Visible;
+                index += 1;
             }
             "--uac" => {
                 uac = true;
@@ -353,16 +348,6 @@ fn parse_version(args: &[OsString], index: usize, option: &str) -> Result<Versio
     VersionTriplet::from_str(&value)
 }
 
-fn parse_bool_flag(value: &str, option: &str) -> Result<bool> {
-    match value.to_ascii_lowercase().as_str() {
-        "true" | "1" | "yes" | "on" => Ok(true),
-        "false" | "0" | "no" | "off" => Ok(false),
-        _ => Err(usage_error(format!(
-            "{option} must be one of: true, false, 1, 0, yes, no, on, off"
-        ))),
-    }
-}
-
 fn usage_error(message: impl Into<String>) -> Bat2PeError {
     Bat2PeError::new(ERR_CLI_USAGE, message)
 }
@@ -409,7 +394,7 @@ Options:
 
 Examples:
   bat2pe build run.bat
-  bat2pe build run.cmd --output-exe-path dist\run.exe --visible false
+  bat2pe build run.cmd --output-exe-path dist\run.exe --visible
   bat2pe inspect run.exe
   bat2pe verify run.bat run.exe --arg alpha --arg beta
   bat2pe help build
@@ -454,9 +439,9 @@ Options:
   --internal-name TEXT
       InternalName field stored in metadata and the Windows version resource.
       Defaults to the generated output file stem when omitted.
-  --visible BOOL
-      true keeps a console subsystem. false builds a GUI subsystem and
-      suppresses the console unless the process can attach to a parent console.
+  --visible
+      Show a console window when the generated executable is launched.
+      Without this flag, the executable hides the console window (GUI subsystem).
   --uac
       Write a requireAdministrator execution level into the generated manifest.
       Without this flag, the executable uses asInvoker.
@@ -469,7 +454,7 @@ Examples:
   bat2pe build run.bat
   bat2pe build --input-bat-path run.cmd --output-exe-path dist\run.exe
   bat2pe build run.bat --icon-path app.ico --company Acme --product Runner
-  bat2pe build run.bat --visible false
+  bat2pe build run.bat --visible
   bat2pe build admin.cmd --uac"#
 }
 

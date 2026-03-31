@@ -86,8 +86,6 @@ def test_hidden_runtime_preserves_exit_code(
         script,
         "--output-exe-path",
         output,
-        "--visible",
-        "false",
     )
     assert build.returncode == 0, build.stderr
 

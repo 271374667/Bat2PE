@@ -182,8 +182,8 @@ def test_cli_subcommand_help_is_specific(cli_runner) -> None:
     assert build_help.returncode == 0
     assert "Build Command" in build_help.stdout
     assert "--input-bat-path PATH" in build_help.stdout
-    assert "--visible BOOL" in build_help.stdout
-    assert "build run.bat --visible false" in build_help.stdout
+    assert "--visible" in build_help.stdout
+    assert "build run.bat --visible" in build_help.stdout
 
     build_help_alias = cli_runner("help", "build")
     assert build_help_alias.returncode == 0
@@ -265,8 +265,6 @@ def test_cli_build_and_inspect_returns_full_metadata(
         "launcher.exe",
         "--internal-name",
         "launcher",
-        "--visible",
-        "false",
         "--uac",
     )
 
@@ -406,18 +404,6 @@ def test_cli_rejects_invalid_inputs(
     )
     assert bad_icon_result.returncode == 1
     assert "only .ico icon files are supported" in bad_icon_result.stderr
-
-    invalid_visible = cli_runner(
-        "build",
-        "--input-bat-path",
-        real_script,
-        "--output-exe-path",
-        output,
-        "--visible",
-        "invalid",
-    )
-    assert invalid_visible.returncode == 1
-    assert "--visible must be one of" in invalid_visible.stderr
 
     invalid_version = cli_runner(
         "build",

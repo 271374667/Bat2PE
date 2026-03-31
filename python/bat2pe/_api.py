@@ -61,12 +61,11 @@ class Builder:
     and invoke `build()` later.
 
     Examples:
-        Build a hidden-window executable with version metadata:
+        Build an executable with version metadata (hidden window by default):
 
             builder = Builder(
                 input_bat_path="scripts/hello.bat",
                 output_exe_path="dist/hello.exe",
-                visible=False,
                 company_name="Example Co.",
                 product_name="Batch Tools",
                 file_version="1.2.0",
@@ -79,7 +78,7 @@ class Builder:
         input_bat_path: Pathish,
         *,
         output_exe_path: Pathish | None = None,
-        visible: bool = True,
+        visible: bool = False,
         uac: bool = False,
         icon_path: Pathish | None = None,
         company_name: str | None = None,
@@ -98,7 +97,7 @@ class Builder:
             output_exe_path: Optional output path for the generated executable. When
                 omitted, the native builder decides the final output location.
             visible: Whether the generated executable should show a console
-                window when launched.
+                window when launched. Defaults to ``False`` (hidden window).
             icon_path: Optional path to an `.ico` file embedded into the executable.
             company_name: Optional company name written into version metadata.
             product_name: Optional product name written into version metadata.
@@ -310,7 +309,7 @@ def build(
     input_bat_path: Pathish,
     *,
     output_exe_path: Pathish | None = None,
-    visible: bool = True,
+    visible: bool = False,
     uac: bool = False,
     icon_path: Pathish | None = None,
     company_name: str | None = None,
@@ -331,7 +330,7 @@ def build(
         output_exe_path: Optional output path for the generated executable. When
             omitted, the native builder chooses the destination path.
         visible: Whether the generated executable should show a console window
-            when launched.
+            when launched. Defaults to ``False`` (hidden window).
         icon_path: Optional path to an `.ico` file embedded into the executable.
         company_name: Optional company name written into version metadata.
         product_name: Optional product name written into version metadata.

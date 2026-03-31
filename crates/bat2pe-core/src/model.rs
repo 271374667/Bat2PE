@@ -11,8 +11,8 @@ use crate::error::{Bat2PeError, ERR_INVALID_INPUT};
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum WindowMode {
-    #[default]
     Visible,
+    #[default]
     Hidden,
 }
 
@@ -128,7 +128,7 @@ pub struct RuntimeConfig {
 impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
-            window_mode: WindowMode::Visible,
+            window_mode: WindowMode::Hidden,
             temp_script_suffix: ".cmd".to_string(),
             strict_dp0: true,
             uac: false,

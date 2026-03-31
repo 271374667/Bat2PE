@@ -31,7 +31,7 @@ fn serialize_json<T: serde::Serialize>(value: &T) -> PyResult<String> {
     input_bat_path,
     output_exe_path = None,
     *,
-    visible = true,
+    visible = false,
     uac = false,
     icon_path = None,
     company_name = None,
