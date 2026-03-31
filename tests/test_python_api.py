@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import inspect as pyinspect
+import logging
 from pathlib import Path
 
 import pytest
@@ -195,6 +196,40 @@ def test_build_result_from_dict() -> None:
     assert result.inspect.runtime.temp_script_suffix == ".cmd"
 
 
+def test_version_triplet_str() -> None:
+    from bat2pe._models import VersionTriplet
+
+    triplet = VersionTriplet(major=1, minor=2, patch=3)
+    assert str(triplet) == "1.2.3"
+    assert f"v{triplet}" == "v1.2.3"
+
+
+def test_error_code_constants_match_rust() -> None:
+    from bat2pe import (
+        ERR_CLI_USAGE,
+        ERR_DIRECTORY_NOT_WRITABLE,
+        ERR_INVALID_EXECUTABLE,
+        ERR_INVALID_INPUT,
+        ERR_IO,
+        ERR_RESOURCE_NOT_FOUND,
+        ERR_UNSUPPORTED_ENCODING,
+        ERR_UNSUPPORTED_INPUT,
+        ERR_VERIFY_MISMATCH,
+        ERR_VERIFY_UAC_INTERACTIVE,
+    )
+
+    assert ERR_INVALID_INPUT == 100
+    assert ERR_UNSUPPORTED_INPUT == 101
+    assert ERR_UNSUPPORTED_ENCODING == 102
+    assert ERR_RESOURCE_NOT_FOUND == 103
+    assert ERR_INVALID_EXECUTABLE == 104
+    assert ERR_DIRECTORY_NOT_WRITABLE == 105
+    assert ERR_IO == 106
+    assert ERR_CLI_USAGE == 107
+    assert ERR_VERIFY_MISMATCH == 108
+    assert ERR_VERIFY_UAC_INTERACTIVE == 109
+
+
 def test_native_error_mapping() -> None:
     error = map_native_error(
         RuntimeError('{"code":105,"message":"not writable","path":"C:/demo","details":"no access"}'),
@@ -219,7 +254,7 @@ def test_top_level_import_surface_and_functional_api(
     bat2pe_module,
     fake_ico_bytes: bytes,
     test_dir: Path,
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     assert bat2pe_module.Builder.__name__ == "Builder"
     assert bat2pe_module.build.__name__ == "build"
@@ -236,17 +271,17 @@ def test_top_level_import_surface_and_functional_api(
     icon.write_bytes(fake_ico_bytes)
 
     output.write_text("stale exe placeholder", encoding="utf-8")
-    build_result = bat2pe_module.build(
-        input_bat_path=script,
-        icon_path=icon,
-        company_name="Acme",
-        product_name="Functional API",
-    )
-    captured = capsys.readouterr()
+    with caplog.at_level(logging.INFO, logger="bat2pe._api"):
+        build_result = bat2pe_module.build(
+            input_bat_path=script,
+            icon_path=icon,
+            company_name="Acme",
+            product_name="Functional API",
+        )
 
     assert build_result.output_exe_path == output
     assert build_result.uac is False
-    assert "Overwriting existing file" in captured.out
+    assert "Overwriting existing file" in caplog.text
     inspect_result = bat2pe_module.inspect(output)
     assert inspect_result.source_script_name == "functional_api.bat"
     assert inspect_result.runtime.uac is False

@@ -4,6 +4,19 @@ import json
 from pathlib import Path
 from typing import Any
 
+# Error code constants matching the Rust core error codes in
+# crates/bat2pe-core/src/error.rs.
+ERR_INVALID_INPUT = 100
+ERR_UNSUPPORTED_INPUT = 101
+ERR_UNSUPPORTED_ENCODING = 102
+ERR_RESOURCE_NOT_FOUND = 103
+ERR_INVALID_EXECUTABLE = 104
+ERR_DIRECTORY_NOT_WRITABLE = 105
+ERR_IO = 106
+ERR_CLI_USAGE = 107
+ERR_VERIFY_MISMATCH = 108
+ERR_VERIFY_UAC_INTERACTIVE = 109
+
 
 class Bat2PeError(Exception):
     """Base exception for Python-side bat2pe errors."""

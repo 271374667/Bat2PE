@@ -1,7 +1,22 @@
 """Public Python API for bat2pe."""
 
 from ._api import Builder, Inspector, Verifier, build, inspect, verify
-from ._errors import Bat2PeError, BuildError, InspectError, VerifyError
+from ._errors import (
+    Bat2PeError,
+    BuildError,
+    ERR_CLI_USAGE,
+    ERR_DIRECTORY_NOT_WRITABLE,
+    ERR_INVALID_EXECUTABLE,
+    ERR_INVALID_INPUT,
+    ERR_IO,
+    ERR_RESOURCE_NOT_FOUND,
+    ERR_UNSUPPORTED_ENCODING,
+    ERR_UNSUPPORTED_INPUT,
+    ERR_VERIFY_MISMATCH,
+    ERR_VERIFY_UAC_INTERACTIVE,
+    InspectError,
+    VerifyError,
+)
 from ._models import (
     BuildResult,
     IconInfo,
@@ -18,6 +33,16 @@ __all__ = [
     "BuildError",
     "BuildResult",
     "Builder",
+    "ERR_CLI_USAGE",
+    "ERR_DIRECTORY_NOT_WRITABLE",
+    "ERR_INVALID_EXECUTABLE",
+    "ERR_INVALID_INPUT",
+    "ERR_IO",
+    "ERR_RESOURCE_NOT_FOUND",
+    "ERR_UNSUPPORTED_ENCODING",
+    "ERR_UNSUPPORTED_INPUT",
+    "ERR_VERIFY_MISMATCH",
+    "ERR_VERIFY_UAC_INTERACTIVE",
     "IconInfo",
     "build",
     "inspect",

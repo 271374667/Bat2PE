@@ -11,6 +11,9 @@ class VersionTriplet:
     minor: int
     patch: int
 
+    def __str__(self) -> str:
+        return f"{self.major}.{self.minor}.{self.patch}"
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "VersionTriplet":
         return cls(

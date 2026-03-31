@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import importlib
 import json
-import os
+import logging
 from pathlib import Path
 from typing import Iterable, TypeAlias
 
@@ -17,6 +17,8 @@ from ._errors import BuildError, InspectError, VerifyError, map_native_error
 from ._models import BuildResult, InspectResult, VerifyResult
 
 Pathish: TypeAlias = str | Path
+
+logger = logging.getLogger(__name__)
 
 
 def _load_native():
@@ -148,7 +150,7 @@ class Builder:
         target_output_path = self.output_exe_path or self.input_bat_path.with_suffix(".exe")
         target_output_path.parent.mkdir(parents=True, exist_ok=True)
         if target_output_path.exists():
-            print(f"Overwriting existing file: {target_output_path}", file=os.sys.stdout)
+            logger.info("Overwriting existing file: %s", target_output_path)
 
         native = _load_native()
         try:
