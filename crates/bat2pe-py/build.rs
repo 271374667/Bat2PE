@@ -19,7 +19,6 @@ fn main() {
     emit_rerun_if_changed(&workspace_root.join("Cargo.toml"));
     emit_rerun_if_changed(&workspace_root.join("Cargo.lock"));
     emit_rerun_tree(&workspace_root.join("crates").join("bat2pe-core"));
-    emit_rerun_tree(&workspace_root.join("crates").join("bat2pe-runtime-host"));
     println!("cargo:rerun-if-env-changed=CARGO");
     println!("cargo:rerun-if-env-changed=PROFILE");
     println!("cargo:rerun-if-env-changed=TARGET");
@@ -40,6 +39,8 @@ fn main() {
         .arg("--manifest-path")
         .arg(workspace_root.join("Cargo.toml"))
         .arg("-p")
+        .arg("bat2pe-core")
+        .arg("--bin")
         .arg("bat2pe-runtime-host")
         .arg("--target")
         .arg(&target)

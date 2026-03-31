@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[[bin]]
+name = "bat2pe-runtime-host"
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
