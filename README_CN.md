@@ -9,7 +9,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-success.svg)](#你会在意的亮点)
 [![License](https://img.shields.io/badge/license-MPL--2.0-green.svg)](LICENSE)
 
-[English README](README.md) | [中文说明](README_CN.md) | [Python API](docs/python-api.md) 
+[English README](README.md) | [中文说明](README_CN.md) | [Python API](docs/python-api-cn.md) 
 
 **通过CLI或者封装好的Python模块将 `.bat` / `.cmd` 脚本转为可执行的 `.exe`**  
 **和原脚本运行逻辑完全兼容，可加图标，自定义exe文件信息，UAC提权，可通过卡巴斯基和常规杀毒软件，生成的exe独立运行无额外依赖**
@@ -147,7 +147,7 @@ except BuildError as e:
     print(e.code, e.path, e.details)
 ```
 
-更完整的 Python API 参考（含 `inspect`、`verify` 等高级用法）见 [docs/python-api.md](docs/python-api.md)。
+更完整的 Python API 参考（含 `inspect`、`verify` 等高级用法）见 [docs/python-api-cn.md](docs/python-api-cn.md)。
 
 ## 工作原理
 

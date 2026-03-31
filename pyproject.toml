@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "bat2pe"
-version = "1.1.1"
+version = "1.4.9"
 description = "Windows Bat/Cmd to Exe converter with Rust CLI and Python API."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -36,6 +36,7 @@ manifest-path = "crates/bat2pe-py/Cargo.toml"
 python-source = "python"
 module-name = "bat2pe._native"
 bindings = "pyo3"
+include = [{ path = "LICENSE", format = "sdist" }]
 
 [tool.pytest.ini_options]
 addopts = "-p no:cacheprovider"
