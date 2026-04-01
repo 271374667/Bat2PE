@@ -1,12 +1,11 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use std::ffi::OsString;
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use bat2pe_core::{
-    Bat2PeError, BuildRequest, TemplateExecutable, VerifyRequest, VersionInfo, VersionTriplet,
-    WindowMode, build_executable, inspect_executable, verify,
+    Bat2PeError, BuildRequest, TemplateExecutable, VersionInfo, VersionTriplet, WindowMode,
+    build_executable,
 };
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -93,38 +92,8 @@ fn build(
     serialize_json(&result)
 }
 
-#[pyfunction]
-fn inspect(executable: String) -> PyResult<String> {
-    let result = inspect_executable(PathBuf::from(executable).as_path()).map_err(to_py_error)?;
-    serialize_json(&result)
-}
-
-#[pyfunction]
-#[pyo3(signature = (script_path, exe_path, args = None, cwd = None))]
-fn verify_pair(
-    script_path: String,
-    exe_path: String,
-    args: Option<Vec<String>>,
-    cwd: Option<String>,
-) -> PyResult<String> {
-    let request = VerifyRequest {
-        script_path: PathBuf::from(script_path),
-        exe_path: PathBuf::from(exe_path),
-        arguments: args
-            .unwrap_or_default()
-            .into_iter()
-            .map(OsString::from)
-            .collect(),
-        working_dir: cwd.map(PathBuf::from),
-    };
-    let result = verify(&request).map_err(to_py_error)?;
-    serialize_json(&result)
-}
-
 #[pymodule]
 fn _native(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(build, module)?)?;
-    module.add_function(wrap_pyfunction!(inspect, module)?)?;
-    module.add_function(wrap_pyfunction!(verify_pair, module)?)?;
     Ok(())
 }

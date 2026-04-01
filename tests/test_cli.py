@@ -171,9 +171,9 @@ def test_cli_help_smoke(cli_runner) -> None:
     assert help_subcommand.stdout == completed.stdout
     assert version_subcommand.stdout == version.stdout
     assert "Bat2PE CLI" in completed.stdout
-    assert 'Use "bat2pe <COMMAND> --help" for command-specific help.' in completed.stdout
-    assert "bat2pe build run.bat" in completed.stdout
-    assert "bat2pe verify run.bat run.exe" in completed.stdout
+    assert 'Use "bat2pe build --help" for detailed build options.' in completed.stdout
+    assert "bat2pe run.bat" in completed.stdout
+    assert "bat2pe verify" not in completed.stdout
     assert version.stdout.startswith("bat2pe ")
 
 
@@ -189,36 +189,19 @@ def test_cli_subcommand_help_is_specific(cli_runner) -> None:
     assert build_help_alias.returncode == 0
     assert build_help_alias.stdout == build_help.stdout
 
-    inspect_help = cli_runner("inspect", "--help")
-    assert inspect_help.returncode == 0
-    assert "Inspect Command" in inspect_help.stdout
-    assert "--exe-path PATH" in inspect_help.stdout
-    assert "--input-bat-path PATH" not in inspect_help.stdout
+    inspect_removed = cli_runner("inspect", "run.exe")
+    assert inspect_removed.returncode == 1
+    assert "not available as user commands" in inspect_removed.stderr
 
-    verify_help = cli_runner("verify", "--help")
-    assert verify_help.returncode == 0
-    assert "Verify Command" in verify_help.stdout
-    assert "<SCRIPT_PATH>" in verify_help.stdout
-    assert "--script-path, --script PATH" in verify_help.stdout
-    assert "--arg VALUE" in verify_help.stdout
+    verify_removed = cli_runner("verify", "run.bat", "run.exe")
+    assert verify_removed.returncode == 1
+    assert "not available as user commands" in verify_removed.stderr
 
 
 def test_cli_reports_usage_errors(cli_runner, test_dir: Path) -> None:
     missing_input = cli_runner("build")
     assert missing_input.returncode == 1
     assert "missing input bat path" in missing_input.stderr
-
-    inspect_missing = cli_runner("inspect")
-    assert inspect_missing.returncode == 1
-    assert "missing executable path" in inspect_missing.stderr
-
-    verify_missing = cli_runner("verify", "--script-path", test_dir / "missing.bat")
-    assert verify_missing.returncode == 1
-    assert "missing executable path" in verify_missing.stderr
-
-    verify_positional = cli_runner("verify", "positional")
-    assert verify_positional.returncode == 1
-    assert "missing executable path" in verify_positional.stderr
 
     missing_out_value = cli_runner(
         "build",
@@ -299,14 +282,6 @@ def test_cli_build_and_inspect_returns_full_metadata(
     assert _read_version_string(output, "ProductVersion") == "4.5.6"
     assert _read_fixed_version(output, "file") == (1, 2, 3)
     assert _read_fixed_version(output, "product") == (4, 5, 6)
-
-    inspect = cli_runner("inspect", "--exe-path", output)
-    assert inspect.returncode == 0, inspect.stderr
-    inspect_payload = json.loads(inspect.stdout)
-    assert inspect_payload["source_script_name"] == "launcher.bat"
-    assert inspect_payload["schema_version"] == 1
-    assert inspect_payload["icon"]["size"] == len(fake_ico_bytes)
-    assert inspect_payload["runtime"]["uac"] is True
     assert _extract_icon_count(output) > 0
     assert _extract_execution_level(output) == "requireAdministrator"
 
@@ -332,10 +307,6 @@ def test_cli_supports_overwrite_and_quiet_mode(cli_runner, test_dir: Path) -> No
     assert second.stdout == ""
     assert output.exists()
 
-    inspect_quiet = cli_runner("inspect", "--exe-path", output, "--quiet")
-    assert inspect_quiet.returncode == 0, inspect_quiet.stderr
-    assert inspect_quiet.stdout == ""
-
 
 def test_cli_defaults_output_path_and_overwrites_existing_file(
     cli_runner,
@@ -352,14 +323,10 @@ def test_cli_defaults_output_path_and_overwrites_existing_file(
     payload = json.loads(build.stdout)
     assert Path(payload["output_exe_path"]) == default_output
     assert default_output.exists()
-
-    inspect = cli_runner("inspect", "--exe-path", default_output)
-    assert inspect.returncode == 0, inspect.stderr
-    inspect_payload = json.loads(inspect.stdout)
-    assert inspect_payload["source_script_name"] == "default_output.cmd"
-    assert inspect_payload["runtime"]["uac"] is False
-    assert inspect_payload["version_info"]["original_filename"] == "default_output.exe"
-    assert inspect_payload["version_info"]["internal_name"] == "default_output"
+    assert payload["inspect"]["source_script_name"] == "default_output.cmd"
+    assert payload["inspect"]["runtime"]["uac"] is False
+    assert payload["inspect"]["version_info"]["original_filename"] == "default_output.exe"
+    assert payload["inspect"]["version_info"]["internal_name"] == "default_output"
     assert _read_version_string(default_output, "OriginalFilename") == "default_output.exe"
     assert _read_version_string(default_output, "InternalName") == "default_output"
     assert _extract_execution_level(default_output) == "asInvoker"
@@ -417,100 +384,19 @@ def test_cli_rejects_invalid_inputs(
     assert invalid_version.returncode == 1
     assert "major.minor.patch" in invalid_version.stderr
 
-    invalid_exe = test_dir / "invalid.exe"
-    invalid_exe.write_text("plain text", encoding="utf-8")
-    inspect = cli_runner("inspect", "--exe-path", invalid_exe)
-    assert inspect.returncode == 1
-    assert "failed to load executable as a data file" in inspect.stderr
 
-
-def test_cli_verify_matches_args_and_working_directory(cli_runner, test_dir: Path) -> None:
-    script = test_dir / "args_and_cwd.bat"
-    script.write_bytes(
-        b"@echo off\r\n"
-        b"echo cwd=%CD% 1>&2\r\n"
-        b"echo arg1=%~1 1>&2\r\n"
-        b"echo arg2=%~2 1>&2\r\n"
-        b"exit /b 7\r\n"
-    )
-    output = test_dir / "args_and_cwd.exe"
-    build = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
-    assert build.returncode == 0, build.stderr
-
-    working_dir = test_dir / "runtime cwd"
-    working_dir.mkdir()
-    verify = cli_runner(
-        "verify",
-        script,
-        output,
-        "--cwd-path",
-        working_dir,
-        "--arg",
-        "alpha beta",
-        "--arg",
-        "gamma",
-    )
-
-    assert verify.returncode == 0, verify.stderr
-    payload = json.loads(verify.stdout)
-    assert payload["success"] is True
-    assert payload["exit_code_match"] is True
-    assert payload["stderr_match"] is True
-    assert payload["script"]["exit_code"] == 7
-    assert f"cwd={working_dir}" in payload["script"]["stderr"]
-    assert "arg1=alpha beta" in payload["script"]["stderr"]
-    assert "arg2=gamma" in payload["script"]["stderr"]
-
-    quiet = cli_runner(
-        "verify",
-        script,
-        output,
-        "--cwd-path",
-        working_dir,
-        "--quiet",
-    )
-    assert quiet.returncode == 0, quiet.stderr
-    assert quiet.stdout == ""
-
-
-def test_cli_verify_reports_mismatch(cli_runner, test_dir: Path) -> None:
-    built_script = test_dir / "built.bat"
-    built_script.write_bytes(b"@echo off\r\necho built 1>&2\r\nexit /b 0\r\n")
-    different_script = test_dir / "different.bat"
-    different_script.write_bytes(b"@echo off\r\necho different 1>&2\r\nexit /b 5\r\n")
-    output = test_dir / "mismatch.exe"
-
-    build = cli_runner("build", "--input-bat-path", built_script, "--output-exe-path", output)
-    assert build.returncode == 0, build.stderr
-
-    verify = cli_runner("verify", different_script, output)
-    assert verify.returncode == 1
-    payload = json.loads(verify.stdout)
-    assert payload["success"] is False
-    assert payload["exit_code_match"] is False
-    assert payload["stderr_match"] is False
-    assert payload["script"]["exit_code"] == 5
-    assert payload["executable"]["exit_code"] == 0
-
-
-def test_cli_verify_rejects_uac_enabled_executable(cli_runner, test_dir: Path) -> None:
-    script = test_dir / "uac_verify.bat"
+def test_cli_drag_and_drop_build(cli_runner, test_dir: Path) -> None:
+    script = test_dir / "drag_drop.bat"
     script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
-    output = test_dir / "uac_verify.exe"
+    expected_output = test_dir / "drag_drop.exe"
 
-    build = cli_runner(
-        "build",
-        "--input-bat-path",
-        script,
-        "--output-exe-path",
-        output,
-        "--uac",
-    )
-    assert build.returncode == 0, build.stderr
-
-    verify = cli_runner("verify", script, output)
-    assert verify.returncode == 1
-    assert "does not support uac-enabled executables" in verify.stderr
+    # Simulate drag-and-drop: pass the bat file path as the first argument directly
+    # without a 'build' subcommand, just as Windows does when dropping onto an exe.
+    result = cli_runner(script)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert Path(payload["output_exe_path"]) == expected_output
+    assert expected_output.exists()
 
 
 def test_cli_records_supported_encodings(cli_runner, test_dir: Path) -> None:
@@ -538,10 +424,7 @@ def test_cli_records_supported_encodings(cli_runner, test_dir: Path) -> None:
         output = test_dir / f"{script.stem}.exe"
         build = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
         assert build.returncode == 0, build.stderr
-
-        inspect = cli_runner("inspect", "--exe-path", output)
-        assert inspect.returncode == 0, inspect.stderr
-        payload = json.loads(inspect.stdout)
+        payload = json.loads(build.stdout)
         assert payload["script_encoding"] == expected
 
 

@@ -258,11 +258,12 @@ def test_top_level_import_surface_and_functional_api(
 ) -> None:
     assert bat2pe_module.Builder.__name__ == "Builder"
     assert bat2pe_module.build.__name__ == "build"
-    assert bat2pe_module.inspect.__name__ == "inspect"
-    assert bat2pe_module.verify.__name__ == "verify"
     assert "Builder" in bat2pe_module.__all__
     assert "build" in bat2pe_module.__all__
-    assert "verify" in bat2pe_module.__all__
+    assert "inspect" not in bat2pe_module.__all__
+    assert "verify" not in bat2pe_module.__all__
+    assert not hasattr(bat2pe_module, "Inspector")
+    assert not hasattr(bat2pe_module, "Verifier")
 
     script = test_dir / "functional_api.bat"
     script.write_bytes(b"@echo off\r\necho functional api 1>&2\r\nexit /b 4\r\n")
@@ -282,11 +283,8 @@ def test_top_level_import_surface_and_functional_api(
     assert build_result.output_exe_path == output
     assert build_result.uac is False
     assert "Overwriting existing file" in caplog.text
-    inspect_result = bat2pe_module.inspect(output)
-    assert inspect_result.source_script_name == "functional_api.bat"
-    assert inspect_result.runtime.uac is False
-    verify_result = bat2pe_module.verify(script, output)
-    assert verify_result.success is True
+    assert build_result.inspect.source_script_name == "functional_api.bat"
+    assert build_result.inspect.runtime.uac is False
     assert _extract_icon_count(output) > 0
     assert _extract_execution_level(output) == "asInvoker"
 
@@ -300,10 +298,6 @@ def test_python_build_api_uses_canonical_output_and_icon_names(
 
     build_signature = pyinspect.signature(bat2pe_module.build)
     builder_signature = pyinspect.signature(bat2pe_module.Builder)
-    inspect_signature = pyinspect.signature(bat2pe_module.inspect)
-    inspector_signature = pyinspect.signature(bat2pe_module.Inspector)
-    verify_signature = pyinspect.signature(bat2pe_module.verify)
-    verifier_signature = pyinspect.signature(bat2pe_module.Verifier)
 
     assert "output_exe_path" in build_signature.parameters
     assert "icon_path" in build_signature.parameters
@@ -314,40 +308,12 @@ def test_python_build_api_uses_canonical_output_and_icon_names(
     assert "output_exe" not in builder_signature.parameters
     assert "icon" not in builder_signature.parameters
     assert "input_script" not in builder_signature.parameters
-    assert list(inspect_signature.parameters) == ["executable_path"]
-    assert list(inspector_signature.parameters) == ["executable_path"]
-    assert "executable" not in inspect_signature.parameters
-    assert "executable" not in inspector_signature.parameters
-    assert list(verify_signature.parameters) == [
-        "script_path",
-        "executable_path",
-        "args",
-        "cwd_path",
-    ]
-    assert list(verifier_signature.parameters) == [
-        "script_path",
-        "executable_path",
-        "args",
-        "cwd_path",
-    ]
-    assert "script" not in verify_signature.parameters
-    assert "executable" not in verify_signature.parameters
-    assert "cwd" not in verify_signature.parameters
-    assert "script" not in verifier_signature.parameters
-    assert "executable" not in verifier_signature.parameters
-    assert "cwd" not in verifier_signature.parameters
 
     builder = bat2pe_module.Builder(input_bat_path=script)
-    inspector = bat2pe_module.Inspector(script)
-    verifier = bat2pe_module.Verifier(script, script)
 
     assert not hasattr(builder, "output_exe")
     assert not hasattr(builder, "icon")
     assert not hasattr(builder, "input_script")
-    assert not hasattr(inspector, "executable")
-    assert not hasattr(verifier, "script")
-    assert not hasattr(verifier, "executable")
-    assert not hasattr(verifier, "cwd")
 
 
 def test_python_build_api_rejects_removed_output_and_icon_aliases(
@@ -384,52 +350,8 @@ def test_python_build_api_rejects_removed_output_and_icon_aliases(
             icon=icon,
         )
 
-    with pytest.raises(TypeError, match="executable"):
-        bat2pe_module.inspect(executable=output)
 
-    with pytest.raises(TypeError, match="executable"):
-        bat2pe_module.Inspector(executable=output)
-
-    with pytest.raises(TypeError, match="script"):
-        bat2pe_module.verify(
-            script=script,
-            executable_path=output,
-        )
-
-    with pytest.raises(TypeError, match="executable"):
-        bat2pe_module.verify(
-            script_path=script,
-            executable=output,
-        )
-
-    with pytest.raises(TypeError, match="cwd"):
-        bat2pe_module.verify(
-            script_path=script,
-            executable_path=output,
-            cwd=script.parent,
-        )
-
-    with pytest.raises(TypeError, match="script"):
-        bat2pe_module.Verifier(
-            script=script,
-            executable_path=output,
-        )
-
-    with pytest.raises(TypeError, match="executable"):
-        bat2pe_module.Verifier(
-            script_path=script,
-            executable=output,
-        )
-
-    with pytest.raises(TypeError, match="cwd"):
-        bat2pe_module.Verifier(
-            script_path=script,
-            executable_path=output,
-            cwd=script.parent,
-        )
-
-
-def test_python_builder_inspector_verifier_roundtrip(
+def test_python_builder_roundtrip(
     bat2pe_module,
     fake_ico_bytes: bytes,
     test_dir: Path,
@@ -445,8 +367,6 @@ def test_python_builder_inspector_verifier_roundtrip(
     output = test_dir / "python_api.exe"
     icon = test_dir / "python_api.ico"
     icon.write_bytes(fake_ico_bytes)
-    cwd = test_dir / "python cwd"
-    cwd.mkdir()
 
     builder = bat2pe_module.Builder(
         input_bat_path=script,
@@ -481,30 +401,11 @@ def test_python_builder_inspector_verifier_roundtrip(
     assert _read_version_string(output, "ProductVersion") == "5.6.7"
     assert _read_fixed_version(output, "file") == (2, 3, 4)
     assert _read_fixed_version(output, "product") == (5, 6, 7)
-
-    inspector = bat2pe_module.Inspector(output)
-    inspect_result = inspector.inspect()
-    assert inspect_result.exe_path == output
-    assert inspect_result.source_script_name == "python_api.cmd"
-    assert inspect_result.version_info.product_version.patch == 7
-
-    verifier = bat2pe_module.Verifier(
-        script,
-        output,
-        args=["alpha beta", "gamma"],
-        cwd_path=cwd,
-    )
-    verify_result = verifier.verify()
-    assert verify_result.success is True
-    assert verify_result.script.exit_code == 9
-    assert f"cwd={cwd}" in verify_result.script.stderr
-    assert "arg1=alpha beta" in verify_result.script.stderr
-    assert "arg2=gamma" in verify_result.script.stderr
     assert _extract_icon_count(output) > 0
     assert _extract_execution_level(output) == "asInvoker"
 
 
-def test_python_api_builds_uac_enabled_executable_and_rejects_verify(
+def test_python_api_builds_uac_enabled_executable(
     bat2pe_module,
     test_dir: Path,
 ) -> None:
@@ -522,15 +423,6 @@ def test_python_api_builds_uac_enabled_executable_and_rejects_verify(
     assert build_result.uac is True
     assert build_result.inspect.runtime.uac is True
     assert _extract_execution_level(output) == "requireAdministrator"
-
-    inspect_result = bat2pe_module.inspect(output)
-    assert inspect_result.runtime.uac is True
-
-    with pytest.raises(bat2pe_module.VerifyError) as verify_error:
-        bat2pe_module.verify(script, output)
-
-    assert verify_error.value.code == 109
-    assert "does not support uac-enabled executables" in str(verify_error.value)
 
 
 def test_python_api_raises_typed_errors(
@@ -560,15 +452,6 @@ def test_python_api_raises_typed_errors(
 
     assert unsupported_error.value.code == 102
     assert unsupported_error.value.path is None
-
-    invalid_exe = test_dir / "invalid.exe"
-    invalid_exe.write_text("plain text", encoding="utf-8")
-    with pytest.raises(bat2pe_module.InspectError) as inspect_error:
-        bat2pe_module.Inspector(invalid_exe).inspect()
-
-    assert inspect_error.value.code == 104
-    assert inspect_error.value.path == invalid_exe
-    assert "failed to load executable as a data file" in str(inspect_error.value)
 
     empty_script = test_dir / "empty.bat"
     empty_script.write_bytes(b"")

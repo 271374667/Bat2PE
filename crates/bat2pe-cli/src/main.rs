@@ -5,9 +5,8 @@ use std::process;
 use std::str::FromStr;
 
 use bat2pe_core::{
-    Bat2PeError, BuildRequest, ERR_CLI_USAGE, Result, VerifyRequest, VersionInfo, VersionTriplet,
-    WindowMode, build_executable, inspect_executable, locate_template_executable,
-    maybe_run_current_executable, verify,
+    Bat2PeError, BuildRequest, ERR_CLI_USAGE, Result, VersionInfo, VersionTriplet, WindowMode,
+    build_executable, locate_template_executable, maybe_run_current_executable,
 };
 use serde::Serialize;
 
@@ -43,8 +42,9 @@ fn real_main() -> Result<i32> {
     let command = args.remove(0);
     match command.to_string_lossy().as_ref() {
         "build" => run_build(args),
-        "inspect" => run_inspect(args),
-        "verify" => run_verify(args),
+        "inspect" | "verify" => Err(usage_error(
+            "'inspect' and 'verify' are not available as user commands",
+        )),
         "help" => run_help(args),
         "version" | "-V" | "--version" => {
             print_version();
@@ -54,7 +54,11 @@ fn real_main() -> Result<i32> {
             print_root_help();
             Ok(0)
         }
-        other => Err(usage_error(format!("unknown subcommand: {other}"))),
+        _ => {
+            // Drag-and-drop: unknown first token is treated as the input bat path.
+            args.insert(0, command);
+            run_build(args)
+        }
     }
 }
 
@@ -67,14 +71,6 @@ fn run_help(args: Vec<OsString>) -> Result<i32> {
         [topic] => match topic.to_string_lossy().as_ref() {
             "build" => {
                 print_build_help();
-                Ok(0)
-            }
-            "inspect" => {
-                print_inspect_help();
-                Ok(0)
-            }
-            "verify" => {
-                print_verify_help();
                 Ok(0)
             }
             "version" => {
@@ -204,119 +200,6 @@ fn run_build(args: Vec<OsString>) -> Result<i32> {
     Ok(0)
 }
 
-fn run_inspect(args: Vec<OsString>) -> Result<i32> {
-    let mut executable_path: Option<PathBuf> = None;
-    let mut quiet = false;
-
-    let mut index = 0;
-    while index < args.len() {
-        let key = args[index].to_string_lossy();
-        match key.as_ref() {
-            "-h" | "--help" => {
-                print_inspect_help();
-                return Ok(0);
-            }
-            "--exe-path" => {
-                executable_path = Some(expect_path_value(&args, index + 1, "--exe-path")?);
-                index += 2;
-            }
-            "--quiet" => {
-                quiet = true;
-                index += 1;
-            }
-            value if value.starts_with("--") => {
-                return Err(usage_error(format!("unknown option: {value}")));
-            }
-            _ => {
-                if executable_path.is_none() {
-                    executable_path = Some(PathBuf::from(args[index].clone()));
-                    index += 1;
-                } else {
-                    return Err(usage_error("unexpected extra positional argument"));
-                }
-            }
-        }
-    }
-
-    let result = inspect_executable(
-        &executable_path.ok_or_else(|| usage_error("missing executable path"))?,
-    )?;
-    if !quiet {
-        print_json(&result)?;
-    }
-    Ok(0)
-}
-
-fn run_verify(args: Vec<OsString>) -> Result<i32> {
-    let mut script_path: Option<PathBuf> = None;
-    let mut exe_path: Option<PathBuf> = None;
-    let mut working_dir_path: Option<PathBuf> = None;
-    let mut passthrough_args: Vec<OsString> = Vec::new();
-    let mut quiet = false;
-
-    let mut index = 0;
-    while index < args.len() {
-        let key = args[index].to_string_lossy();
-        match key.as_ref() {
-            "-h" | "--help" => {
-                print_verify_help();
-                return Ok(0);
-            }
-            "--script-path" | "--script" => {
-                script_path = Some(expect_path_value(&args, index + 1, &key)?);
-                index += 2;
-            }
-            "--exe-path" | "--exe" => {
-                exe_path = Some(expect_path_value(&args, index + 1, &key)?);
-                index += 2;
-            }
-            "--cwd-path" | "--cwd" => {
-                working_dir_path = Some(expect_path_value(&args, index + 1, &key)?);
-                index += 2;
-            }
-            "--arg" => {
-                passthrough_args.push(expect_os_value(&args, index + 1, "--arg")?);
-                index += 2;
-            }
-            "--" => {
-                passthrough_args.extend(args.into_iter().skip(index + 1));
-                break;
-            }
-            "--quiet" => {
-                quiet = true;
-                index += 1;
-            }
-            value if value.starts_with("--") => {
-                return Err(usage_error(format!("unknown option: {value}")));
-            }
-            _ => {
-                if script_path.is_none() {
-                    script_path = Some(PathBuf::from(args[index].clone()));
-                    index += 1;
-                } else if exe_path.is_none() {
-                    exe_path = Some(PathBuf::from(args[index].clone()));
-                    index += 1;
-                } else {
-                    return Err(usage_error("unexpected extra positional argument"));
-                }
-            }
-        }
-    }
-
-    let result = verify(&VerifyRequest {
-        script_path: script_path.ok_or_else(|| usage_error("missing script path"))?,
-        exe_path: exe_path.ok_or_else(|| usage_error("missing executable path"))?,
-        arguments: passthrough_args,
-        working_dir: working_dir_path,
-    })?;
-
-    if !quiet {
-        print_json(&result)?;
-    }
-
-    Ok(if result.success { 0 } else { 1 })
-}
-
 fn print_json<T>(value: &T) -> Result<()>
 where
     T: Serialize,
@@ -364,27 +247,21 @@ fn print_build_help() {
     println!("{}", build_help_text());
 }
 
-fn print_inspect_help() {
-    println!("{}", inspect_help_text());
-}
-
-fn print_verify_help() {
-    println!("{}", verify_help_text());
-}
-
 fn root_help_text() -> &'static str {
     r#"Bat2PE CLI
 
-Convert .bat/.cmd scripts into standalone .exe files, inspect generated payload metadata, and verify that a generated executable still behaves like the original script.
+Convert .bat/.cmd scripts into standalone .exe files.
+
+Drop a .bat or .cmd file onto Bat2PE.exe to convert it instantly, or use the
+build command for full control over output options.
 
 Usage:
-  bat2pe <COMMAND> [OPTIONS]
+  bat2pe <INPUT_BAT_PATH>
+  bat2pe build <INPUT_BAT_PATH> [OPTIONS]
   bat2pe help [COMMAND]
 
 Commands:
   build      Convert a .bat or .cmd script into an executable.
-  inspect    Read embedded bat2pe metadata from a generated executable.
-  verify     Run the script and executable and compare exit code plus stderr.
   help       Show the root help or the help for a specific command.
   version    Show the bat2pe CLI version.
 
@@ -393,13 +270,12 @@ Options:
   -V, --version  Show the bat2pe CLI version.
 
 Examples:
+  bat2pe run.bat
   bat2pe build run.bat
   bat2pe build run.cmd --output-exe-path dist\run.exe --visible
-  bat2pe inspect run.exe
-  bat2pe verify run.bat run.exe --arg alpha --arg beta
   bat2pe help build
 
-Use "bat2pe <COMMAND> --help" for command-specific help."#
+Use "bat2pe build --help" for detailed build options."#
 }
 
 fn build_help_text() -> &'static str {
@@ -456,74 +332,4 @@ Examples:
   bat2pe build run.bat --icon-path app.ico --company Acme --product Runner
   bat2pe build run.bat --visible
   bat2pe build admin.cmd --uac"#
-}
-
-fn inspect_help_text() -> &'static str {
-    r#"Inspect Command
-
-Read bat2pe payload metadata back out of a generated executable.
-
-Usage:
-  bat2pe inspect <EXE_PATH> [OPTIONS]
-  bat2pe inspect --exe-path <EXE_PATH> [OPTIONS]
-
-Arguments:
-  <EXE_PATH>
-      Generated executable path. This positional form is equivalent to --exe-path.
-
-Options:
-  --exe-path PATH
-      Path to the generated executable to inspect.
-  --quiet
-      Suppress the JSON success output.
-  -h, --help
-      Show this help.
-
-Examples:
-  bat2pe inspect run.exe
-  bat2pe inspect --exe-path dist\run.exe"#
-}
-
-fn verify_help_text() -> &'static str {
-    r#"Verify Command
-
-Run the original script and the generated executable, then compare exit code
-and stderr to catch behavior regressions.
-
-Usage:
-  bat2pe verify <SCRIPT_PATH> <EXE_PATH> [OPTIONS] [-- ARGUMENTS...]
-  bat2pe verify --script-path <SCRIPT_PATH> --exe-path <EXE_PATH> [OPTIONS] [-- ARGUMENTS...]
-
-Arguments:
-  <SCRIPT_PATH>
-      Original .bat/.cmd script used for the baseline run.
-  <EXE_PATH>
-      Generated executable used for the comparison run.
-
-Options:
-  --script-path, --script PATH
-      Original .bat/.cmd script used for the baseline run.
-  --exe-path, --exe PATH
-      Generated executable used for the comparison run.
-  --cwd-path, --cwd PATH
-      Optional working directory applied to both runs.
-  --arg VALUE
-      Forward one argument to both runs. Repeat this option for multiple values.
-  --
-      Treat all remaining tokens as passthrough arguments, even if they start
-      with -.
-  --quiet
-      Suppress the JSON result output.
-  -h, --help
-      Show this help.
-
-Notes:
-  verify does not support UAC-enabled executables because Windows elevation is
-  interactive.
-
-Examples:
-  bat2pe verify run.bat run.exe
-  bat2pe verify run.bat run.exe --cwd-path dist
-  bat2pe verify run.bat run.exe --arg alpha --arg beta
-  bat2pe verify run.bat run.exe -- --flag-like-value"#
 }

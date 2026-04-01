@@ -1,8 +1,7 @@
 """Object-oriented and functional Python API for bat2pe.
 
-`Builder`, `Inspector`, and `Verifier` are the primary object-oriented entry
-points. The top-level `build()`, `inspect()`, and `verify()` helpers are thin
-wrappers for callers that prefer a functional style.
+`Builder` is the primary object-oriented entry point. The top-level `build()`
+helper is a thin wrapper for callers that prefer a functional style.
 """
 
 from __future__ import annotations
@@ -11,10 +10,10 @@ import importlib
 import json
 import logging
 from pathlib import Path
-from typing import Iterable, TypeAlias
+from typing import TypeAlias
 
-from ._errors import BuildError, InspectError, VerifyError, map_native_error
-from ._models import BuildResult, InspectResult, VerifyResult
+from ._errors import BuildError, map_native_error
+from ._models import BuildResult
 
 Pathish: TypeAlias = str | Path
 
@@ -174,137 +173,6 @@ class Builder:
         return BuildResult.from_dict(json.loads(payload))
 
 
-class Inspector:
-    """Stateful inspector for reading metadata from a generated executable.
-
-    Use this class when inspection is part of a larger workflow and you want to
-    keep the target executable on the instance before calling `inspect()`.
-
-    Examples:
-        Read embedded runtime and version information:
-
-            inspector = Inspector("dist/hello.exe")
-            result = inspector.inspect()
-    """
-
-    def __init__(
-        self,
-        executable_path: Pathish,
-    ) -> None:
-        """Initialize an inspector for a generated executable.
-
-        Args:
-            executable_path: Path to the `.exe` file produced by bat2pe and targeted
-                for inspection.
-        """
-
-        self.executable_path = Path(executable_path)
-
-    def inspect(self) -> InspectResult:
-        """Inspect the configured executable and decode its embedded metadata.
-
-        Returns:
-            InspectResult: Parsed executable metadata, including runtime
-            configuration, icon information, and version metadata.
-
-        Raises:
-            InspectError: If inspection fails and the native layer reports an
-                inspection-specific error.
-            RuntimeError: If the `bat2pe._native` extension is unavailable.
-
-        Examples:
-            Inspect a generated executable:
-
-                result = Inspector("dist/hello.exe").inspect()
-        """
-
-        native = _load_native()
-        try:
-            payload = native.inspect(_normalize_path(self.executable_path))
-        except Exception as exc:  # noqa: BLE001
-            raise map_native_error(exc, InspectError) from exc
-        return InspectResult.from_dict(json.loads(payload))
-
-
-class Verifier:
-    """Stateful verifier for comparing script and executable behavior.
-
-    The verifier runs the original batch script and the generated executable
-    with matching inputs, then compares their observable results.
-
-    Examples:
-        Verify that an executable behaves like its source script:
-
-            verifier = Verifier(
-                "scripts/hello.bat",
-                "dist/hello.exe",
-                args=["world"],
-            )
-            result = verifier.verify()
-    """
-
-    def __init__(
-        self,
-        script_path: Pathish,
-        executable_path: Pathish,
-        *,
-        args: Iterable[str] | None = None,
-        cwd_path: Pathish | None = None,
-    ) -> None:
-        """Initialize a verification request.
-
-        Args:
-            script_path: Path to the original batch script used as the behavior
-                baseline.
-            executable_path: Path to the generated executable to compare against the
-                original script.
-            args: Optional command-line arguments passed to both the script and
-                the executable during verification.
-            cwd_path: Optional working directory used for both executions. When
-                omitted, the native verifier uses its default working
-                directory.
-        """
-
-        self.script_path = Path(script_path)
-        self.executable_path = Path(executable_path)
-        self.args = list(args or [])
-        self.cwd_path = Path(cwd_path) if cwd_path is not None else None
-
-    def verify(self) -> VerifyResult:
-        """Execute verification with the options stored on this instance.
-
-        Returns:
-            VerifyResult: Execution outputs for the script and executable plus
-            comparison flags that show whether they match.
-
-        Raises:
-            VerifyError: If verification cannot be completed before a
-                comparison result is produced.
-            RuntimeError: If the `bat2pe._native` extension is unavailable.
-
-        Examples:
-            Verify a generated executable with shared CLI arguments:
-
-                result = Verifier(
-                    "scripts/hello.bat",
-                    "dist/hello.exe",
-                    args=["--quiet"],
-                ).verify()
-        """
-
-        native = _load_native()
-        try:
-            payload = native.verify_pair(
-                _normalize_path(self.script_path),
-                _normalize_path(self.executable_path),
-                args=self.args,
-                cwd=_normalize_path(self.cwd_path) if self.cwd_path is not None else None,
-            )
-        except Exception as exc:  # noqa: BLE001
-            raise map_native_error(exc, VerifyError) from exc
-        return VerifyResult.from_dict(json.loads(payload))
-
-
 def build(
     input_bat_path: Pathish,
     *,
@@ -377,78 +245,3 @@ def build(
         original_filename=original_filename,
         internal_name=internal_name,
     ).build()
-
-
-def inspect(
-    executable_path: Pathish,
-) -> InspectResult:
-    """Inspect a generated executable with the functional convenience API.
-
-    This is a thin wrapper around `Inspector(executable_path).inspect()`.
-
-    Args:
-        executable_path: Path to the generated executable that should be inspected.
-
-    Returns:
-        InspectResult: Parsed executable metadata, including runtime settings,
-        icon information, and version metadata.
-
-    Raises:
-        InspectError: If inspection fails and the native layer reports an
-            inspection-specific error.
-        RuntimeError: If the `bat2pe._native` extension is unavailable.
-
-    Examples:
-        Inspect an executable in one call:
-
-            result = inspect("dist/hello.exe")
-    """
-
-    return Inspector(executable_path=executable_path).inspect()
-
-
-def verify(
-    script_path: Pathish,
-    executable_path: Pathish,
-    *,
-    args: Iterable[str] | None = None,
-    cwd_path: Pathish | None = None,
-) -> VerifyResult:
-    """Verify a generated executable with the functional convenience API.
-
-    This is a thin wrapper around `Verifier(...).verify()`.
-
-    Args:
-        script_path: Path to the original batch script used as the verification
-            baseline.
-        executable_path: Path to the generated executable that should behave like
-            the original script.
-        args: Optional command-line arguments passed to both the script and the
-            executable during verification.
-        cwd_path: Optional working directory used for both executions.
-
-    Returns:
-        VerifyResult: Execution outputs for the script and executable plus
-        comparison flags.
-
-    Raises:
-        VerifyError: If verification cannot be completed before a comparison
-            result is produced.
-        RuntimeError: If the `bat2pe._native` extension is unavailable.
-
-    Examples:
-        Compare a script and executable in one call:
-
-            result = verify(
-                "scripts/hello.bat",
-                "dist/hello.exe",
-                args=["--quiet"],
-            )
-    """
-
-    return Verifier(
-        script_path=script_path,
-        executable_path=executable_path,
-        args=args,
-        cwd_path=cwd_path,
-    ).verify()

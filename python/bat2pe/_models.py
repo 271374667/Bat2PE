@@ -149,37 +149,3 @@ class BuildResult:
     @property
     def stub_path(self) -> Path:
         return self.template_executable_path
-
-
-@dataclass(slots=True, frozen=True)
-class VerifyExecution:
-    exit_code: int
-    stderr: str
-    stdout: str
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "VerifyExecution":
-        return cls(
-            exit_code=int(data["exit_code"]),
-            stderr=str(data["stderr"]),
-            stdout=str(data["stdout"]),
-        )
-
-
-@dataclass(slots=True, frozen=True)
-class VerifyResult:
-    script: VerifyExecution
-    executable: VerifyExecution
-    exit_code_match: bool
-    stderr_match: bool
-    success: bool
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "VerifyResult":
-        return cls(
-            script=VerifyExecution.from_dict(data["script"]),
-            executable=VerifyExecution.from_dict(data["executable"]),
-            exit_code_match=bool(data["exit_code_match"]),
-            stderr_match=bool(data["stderr_match"]),
-            success=bool(data["success"]),
-        )
