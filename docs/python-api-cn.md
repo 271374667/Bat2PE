@@ -59,27 +59,19 @@ uv run python scripts/compile.py --debug
 from bat2pe import (
     # 类
     Builder,
-    Inspector,
-    Verifier,
     # 函数式辅助方法
     build,
-    inspect,
-    verify,
     # 结果类型
     BuildResult,
     InspectResult,
-    VerifyResult,
     # 嵌套模型类型
     IconInfo,
     RuntimeConfig,
-    VerifyExecution,
     VersionInfo,
     VersionTriplet,
     # 异常
     Bat2PeError,
     BuildError,
-    InspectError,
-    VerifyError,
     # 错误码常量
     ERR_INVALID_INPUT,
     ERR_UNSUPPORTED_INPUT,
@@ -99,7 +91,7 @@ from bat2pe import (
 ```python
 from pathlib import Path
 
-from bat2pe import Builder, Inspector, Verifier
+from bat2pe import Builder
 
 builder = Builder(
     input_bat_path=Path("run.bat"),
@@ -112,16 +104,6 @@ builder = Builder(
     product_version="1.2.3",
 )
 build_result = builder.build()
-
-inspector = Inspector(build_result.output_exe_path)
-inspect_result = inspector.inspect()
-
-verifier = Verifier(
-    Path("run.bat"),
-    build_result.output_exe_path,
-    args=["alpha", "beta"],
-)
-verify_result = verifier.verify()
 ```
 
 如果省略 `output_exe_path`，构建器会在输入脚本旁边生成同名 `.exe`。已存在的文件会被覆盖。
@@ -129,7 +111,7 @@ verify_result = verifier.verify()
 ## 函数式用法
 
 ```python
-from bat2pe import build, inspect, verify
+from bat2pe import build
 
 build_result = build(
     input_bat_path="run.bat",
@@ -137,9 +119,6 @@ build_result = build(
     visible=True,
     uac=False,
 )
-
-inspect_result = inspect("run.exe")
-verify_result = verify("run.bat", "run.exe", args=["hello"])
 ```
 
 ## 返回值
@@ -147,8 +126,6 @@ verify_result = verify("run.bat", "run.exe", args=["hello"])
 Python 返回值均为标准库 dataclass：
 
 - `BuildResult`
-- `InspectResult`
-- `VerifyResult`
 
 嵌套的类型化对象包括：
 
@@ -156,7 +133,7 @@ Python 返回值均为标准库 dataclass：
 - `VersionTriplet` — 支持 `str()` 输出 `"major.minor.patch"` 格式
 - `RuntimeConfig`
 - `IconInfo`
-- `VerifyExecution`
+- `InspectResult` — 嵌套在 `BuildResult.inspect` 字段中
 
 `BuildResult` 暴露以下字段：
 
@@ -178,8 +155,6 @@ Python 返回值均为标准库 dataclass：
 
 - `Bat2PeError`
 - `BuildError`
-- `InspectError`
-- `VerifyError`
 
 每个异常暴露以下属性：
 
@@ -238,4 +213,3 @@ result = build(
 - `uac=False` 是默认值
 - `uac=True` 会在生成的 exe 中写入 `requireAdministrator` 清单
 - 子进程 `cmd.exe` 执行时会继承提升后的权限
-- `verify()` 不支持 `uac=True` 的可执行文件，因为 UAC 提权是交互式的

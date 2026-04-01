@@ -67,27 +67,19 @@ All public names can be imported from the top-level package:
 from bat2pe import (
     # Classes
     Builder,
-    Inspector,
-    Verifier,
     # Functional helpers
     build,
-    inspect,
-    verify,
     # Result types
     BuildResult,
     InspectResult,
-    VerifyResult,
     # Nested model types
     IconInfo,
     RuntimeConfig,
-    VerifyExecution,
     VersionInfo,
     VersionTriplet,
     # Exceptions
     Bat2PeError,
     BuildError,
-    InspectError,
-    VerifyError,
     # Error code constants
     ERR_INVALID_INPUT,
     ERR_UNSUPPORTED_INPUT,
@@ -107,7 +99,7 @@ from bat2pe import (
 ```python
 from pathlib import Path
 
-from bat2pe import Builder, Inspector, Verifier
+from bat2pe import Builder
 
 builder = Builder(
     input_bat_path=Path("run.bat"),
@@ -120,16 +112,6 @@ builder = Builder(
     product_version="1.2.3",
 )
 build_result = builder.build()
-
-inspector = Inspector(build_result.output_exe_path)
-inspect_result = inspector.inspect()
-
-verifier = Verifier(
-    Path("run.bat"),
-    build_result.output_exe_path,
-    args=["alpha", "beta"],
-)
-verify_result = verifier.verify()
 ```
 
 If `output_exe_path` is omitted, the builder writes a same-name `.exe` beside
@@ -138,7 +120,7 @@ the input script. Existing files are overwritten.
 ## Functional Usage
 
 ```python
-from bat2pe import build, inspect, verify
+from bat2pe import build
 
 build_result = build(
     input_bat_path="run.bat",
@@ -146,9 +128,6 @@ build_result = build(
     visible=True,
     uac=False,
 )
-
-inspect_result = inspect("run.exe")
-verify_result = verify("run.bat", "run.exe", args=["hello"])
 ```
 
 ## Results
@@ -156,8 +135,6 @@ verify_result = verify("run.bat", "run.exe", args=["hello"])
 Python result values are standard-library dataclasses:
 
 - `BuildResult`
-- `InspectResult`
-- `VerifyResult`
 
 Nested typed objects include:
 
@@ -165,7 +142,7 @@ Nested typed objects include:
 - `VersionTriplet` — supports `str()` to produce `"major.minor.patch"` format
 - `RuntimeConfig`
 - `IconInfo`
-- `VerifyExecution`
+- `InspectResult` — embedded in `BuildResult.inspect`
 
 `BuildResult` exposes:
 
@@ -189,8 +166,6 @@ Failures raise typed exceptions:
 
 - `Bat2PeError`
 - `BuildError`
-- `InspectError`
-- `VerifyError`
 
 Each exception exposes:
 
@@ -251,5 +226,3 @@ Notes:
 - `uac=True` writes a `requireAdministrator` manifest into the generated exe
 - child `cmd.exe` executions inherit elevation once the generated exe is
   running elevated
-- `verify()` intentionally does not support `uac=True` executables because UAC
-  elevation is interactive

@@ -22,7 +22,7 @@
 
 ## 你会在意的亮点
 
-- **`build → inspect → verify` 一条龙**：生成、检查、验证不需要换工具
+- **拖拽即转换**：将 `.bat` / `.cmd` 文件直接拖到 `Bat2PE.exe` 上，松手即完成转换，无需任何命令
 - **`%~dp0` 语义保留**：临时脚本写在 `.exe` 旁边而非 `%TEMP%`，最大限度减少相对路径失效
 - **窗口模式**：默认 `hidden`（静默后台），加 `--visible` 切换为前台控制台
 - **多编码支持**：`UTF-8` · `UTF-8 BOM` · `UTF-16 LE BOM` · `ANSI/GBK` 自动识别
@@ -58,34 +58,40 @@ pip install bat2pe
 
 ### CLI 用法
 
-**最简单的转换**——一行命令，在脚本旁生成同名 `.exe`：
+**最简单的转换**——将 `run.bat` 拖到 `Bat2PE.exe` 上，或从命令行运行：
 
 ```powershell
-bat2pe build run.bat
+bat2pe run.bat
+```
+
+**或者直接拖拽**——将 `run.bat` 拖到 `Bat2PE.exe` 上，无需任何命令：
+
+```
+[将 run.bat 拖到 Bat2PE.exe 上]  →  run.exe 生成在 run.bat 旁边
 ```
 
 **指定输出路径和图标**：
 
 ```powershell
-bat2pe build run.bat --output-exe-path dist\run.exe --icon-path app.ico
+bat2pe run.bat --output-exe-path dist\run.exe --icon-path app.ico
 ```
 
 **显示控制台窗口**（适合需要交互的前台工具）：
 
 ```powershell
-bat2pe build run.bat --visible
+bat2pe run.bat --visible
 ```
 
 **添加 UAC 管理员提权**：
 
 ```powershell
-bat2pe build admin.cmd --uac
+bat2pe admin.cmd --uac
 ```
 
 **写入完整的版本元数据**：
 
 ```powershell
-bat2pe build run.bat ^
+bat2pe run.bat ^
   --company "Acme Corp" ^
   --product "My Tool" ^
   --description "启动器" ^
@@ -93,7 +99,7 @@ bat2pe build run.bat ^
   --product-version 1.2.3
 ```
 
-> 💡 除 `build` 外还有 `inspect`（查看 exe 元信息）和 `verify`（校验行为一致性）子命令，运行 `bat2pe <command> --help` 查看完整说明。
+> 💡 运行 `bat2pe --help` 查看完整选项。
 
 ### Python 用法
 
@@ -147,7 +153,7 @@ except BuildError as e:
     print(e.code, e.path, e.details)
 ```
 
-更完整的 Python API 参考（含 `inspect`、`verify` 等高级用法）见 [docs/python-api-cn.md](docs/python-api-cn.md)。
+更完整的 Python API 参考见 [docs/python-api-cn.md](docs/python-api-cn.md)。
 
 ## 工作原理
 
@@ -230,7 +236,8 @@ uv run pytest
 
 测试覆盖范围包括：
 
-- CLI 帮助输出、参数校验、build/inspect/verify 全流程
+- CLI 帮助输出、参数校验、build 全流程
+- CLI 拖拽转换（第一个参数直接传入 bat 路径）
 - Python API 函数式 + 面向对象双接口
 - 编码识别与不支持编码的拒绝
 - 类型化异常映射
@@ -242,10 +249,7 @@ uv run pytest
 - Python 3.10 语法兼容性检查
 
 
-## 当前阶段与已知限制
-
-Bat2PE 已经适合**单脚本、启动器风格的批处理项目**。`build → inspect → verify` 工作流完整可用。
-
+## 已经完成的任务
 
 | 项目 | 状态 |
 |------|------|
