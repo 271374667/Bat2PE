@@ -33,58 +33,26 @@ fn dispatch_main() -> Result<i32> {
 }
 
 fn real_main() -> Result<i32> {
-    let mut args: Vec<OsString> = env::args_os().skip(1).collect();
+    let args: Vec<OsString> = env::args_os().skip(1).collect();
+
     if args.is_empty() {
         print_root_help();
-        return Err(usage_error("missing subcommand"));
+        return Err(usage_error("missing input bat path"));
     }
 
-    let command = args.remove(0);
-    match command.to_string_lossy().as_ref() {
-        "build" => run_build(args),
-        "inspect" | "verify" => Err(usage_error(
-            "'inspect' and 'verify' are not available as user commands",
-        )),
-        "help" => run_help(args),
-        "version" | "-V" | "--version" => {
-            print_version();
-            Ok(0)
-        }
-        "-h" | "--help" => {
-            print_root_help();
-            Ok(0)
-        }
-        _ => {
-            // Drag-and-drop: unknown first token is treated as the input bat path.
-            args.insert(0, command);
-            run_build(args)
-        }
+    // --help / -h anywhere takes highest priority.
+    if args.iter().any(|a| matches!(a.to_string_lossy().as_ref(), "-h" | "--help")) {
+        print_root_help();
+        return Ok(0);
     }
-}
 
-fn run_help(args: Vec<OsString>) -> Result<i32> {
-    match args.as_slice() {
-        [] => {
-            print_root_help();
-            Ok(0)
-        }
-        [topic] => match topic.to_string_lossy().as_ref() {
-            "build" => {
-                print_build_help();
-                Ok(0)
-            }
-            "version" => {
-                print_version();
-                Ok(0)
-            }
-            "-h" | "--help" => {
-                print_root_help();
-                Ok(0)
-            }
-            other => Err(usage_error(format!("unknown help topic: {other}"))),
-        },
-        _ => Err(usage_error("help accepts at most one command name")),
+    // --version / -V
+    if args.iter().any(|a| matches!(a.to_string_lossy().as_ref(), "-V" | "--version")) {
+        print_version();
+        return Ok(0);
     }
+
+    run_build(args)
 }
 
 fn run_build(args: Vec<OsString>) -> Result<i32> {
@@ -100,10 +68,6 @@ fn run_build(args: Vec<OsString>) -> Result<i32> {
     while index < args.len() {
         let key = args[index].to_string_lossy();
         match key.as_ref() {
-            "-h" | "--help" => {
-                print_build_help();
-                return Ok(0);
-            }
             "--input-bat-path" => {
                 input_bat_path = Some(expect_path_value(&args, index + 1, "--input-bat-path")?);
                 index += 2;
@@ -243,53 +207,19 @@ fn print_root_help() {
     println!("{}", root_help_text());
 }
 
-fn print_build_help() {
-    println!("{}", build_help_text());
-}
-
 fn root_help_text() -> &'static str {
     r#"Bat2PE CLI
 
-Convert .bat/.cmd scripts into standalone .exe files.
+Convert a .bat or .cmd script into a standalone Windows executable.
 
-Drop a .bat or .cmd file onto Bat2PE.exe to convert it instantly, or use the
-build command for full control over output options.
-
-Usage:
-  bat2pe <INPUT_BAT_PATH>
-  bat2pe build <INPUT_BAT_PATH> [OPTIONS]
-  bat2pe help [COMMAND]
-
-Commands:
-  build      Convert a .bat or .cmd script into an executable.
-  help       Show the root help or the help for a specific command.
-  version    Show the bat2pe CLI version.
-
-Options:
-  -h, --help  Show this help.
-  -V, --version  Show the bat2pe CLI version.
-
-Examples:
-  bat2pe run.bat
-  bat2pe build run.bat
-  bat2pe build run.cmd --output-exe-path dist\run.exe --visible
-  bat2pe help build
-
-Use "bat2pe build --help" for detailed build options."#
-}
-
-fn build_help_text() -> &'static str {
-    r#"Build Command
-
-Convert one .bat/.cmd script into a standalone Windows executable.
+Drop a .bat or .cmd file onto Bat2PE.exe to convert it instantly.
 
 Usage:
-  bat2pe build <INPUT_BAT_PATH> [OPTIONS]
-  bat2pe build --input-bat-path <INPUT_BAT_PATH> [OPTIONS]
+  bat2pe <INPUT_BAT_PATH> [OPTIONS]
 
 Arguments:
   <INPUT_BAT_PATH>
-      Input batch script. This positional form is equivalent to --input-bat-path.
+      Input batch script (.bat or .cmd). Positional form of --input-bat-path.
 
 Options:
   --input-bat-path PATH
@@ -325,11 +255,12 @@ Options:
       Suppress the JSON success output.
   -h, --help
       Show this help.
+  -V, --version
+      Show the bat2pe CLI version.
 
 Examples:
-  bat2pe build run.bat
-  bat2pe build --input-bat-path run.cmd --output-exe-path dist\run.exe
-  bat2pe build run.bat --icon-path app.ico --company Acme --product Runner
-  bat2pe build run.bat --visible
-  bat2pe build admin.cmd --uac"#
+  bat2pe run.bat
+  bat2pe run.bat --output-exe-path dist\run.exe --visible
+  bat2pe run.bat --icon-path app.ico --company Acme --product Runner
+  bat2pe run.bat --uac"#
 }

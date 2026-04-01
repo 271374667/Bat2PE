@@ -159,52 +159,48 @@ def _read_fixed_version(executable_path: Path, kind: str) -> tuple[int, int, int
 
 
 def test_cli_help_smoke(cli_runner) -> None:
-    completed = cli_runner("--help")
-    help_subcommand = cli_runner("help")
+    help_flag = cli_runner("--help")
+    help_short = cli_runner("-h")
     version = cli_runner("--version")
-    version_subcommand = cli_runner("version")
+    version_short = cli_runner("-V")
 
-    assert completed.returncode == 0
-    assert help_subcommand.returncode == 0
+    assert help_flag.returncode == 0
+    assert help_short.returncode == 0
     assert version.returncode == 0
-    assert version_subcommand.returncode == 0
-    assert help_subcommand.stdout == completed.stdout
-    assert version_subcommand.stdout == version.stdout
-    assert "Bat2PE CLI" in completed.stdout
-    assert 'Use "bat2pe build --help" for detailed build options.' in completed.stdout
-    assert "bat2pe run.bat" in completed.stdout
-    assert "bat2pe verify" not in completed.stdout
+    assert version_short.returncode == 0
+    assert help_short.stdout == help_flag.stdout
+    assert version_short.stdout == version.stdout
+    assert "Bat2PE CLI" in help_flag.stdout
+    assert "--output-exe-path" in help_flag.stdout
+    assert "bat2pe run.bat" in help_flag.stdout
+    assert "bat2pe verify" not in help_flag.stdout
     assert version.stdout.startswith("bat2pe ")
 
 
-def test_cli_subcommand_help_is_specific(cli_runner) -> None:
-    build_help = cli_runner("build", "--help")
-    assert build_help.returncode == 0
-    assert "Build Command" in build_help.stdout
-    assert "--input-bat-path PATH" in build_help.stdout
-    assert "--visible" in build_help.stdout
-    assert "build run.bat --visible" in build_help.stdout
+def test_cli_help_priority(cli_runner, test_dir: Path) -> None:
+    # --help takes priority regardless of position
+    script = test_dir / "help_priority.bat"
+    script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
 
-    build_help_alias = cli_runner("help", "build")
-    assert build_help_alias.returncode == 0
-    assert build_help_alias.stdout == build_help.stdout
+    first = cli_runner("--help", str(script))
+    assert first.returncode == 0
+    assert "Bat2PE CLI" in first.stdout
 
-    inspect_removed = cli_runner("inspect", "run.exe")
-    assert inspect_removed.returncode == 1
-    assert "not available as user commands" in inspect_removed.stderr
+    last = cli_runner(str(script), "--uac", "--help")
+    assert last.returncode == 0
+    assert "Bat2PE CLI" in last.stdout
 
-    verify_removed = cli_runner("verify", "run.bat", "run.exe")
-    assert verify_removed.returncode == 1
-    assert "not available as user commands" in verify_removed.stderr
+    short = cli_runner(str(script), "-h")
+    assert short.returncode == 0
+    assert "Bat2PE CLI" in short.stdout
 
 
 def test_cli_reports_usage_errors(cli_runner, test_dir: Path) -> None:
-    missing_input = cli_runner("build")
+    missing_input = cli_runner()
     assert missing_input.returncode == 1
     assert "missing input bat path" in missing_input.stderr
 
     missing_out_value = cli_runner(
-        "build",
         "--input-bat-path",
         test_dir / "missing.bat",
         "--output-exe-path",
@@ -227,7 +223,6 @@ def test_cli_build_and_inspect_returns_full_metadata(
 
     output = test_dir / "launcher.exe"
     build = cli_runner(
-        "build",
         "--input-bat-path",
         script,
         "--output-exe-path",
@@ -291,12 +286,11 @@ def test_cli_supports_overwrite_and_quiet_mode(cli_runner, test_dir: Path) -> No
     script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
     output = test_dir / "overwrite.exe"
 
-    first = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
+    first = cli_runner("--input-bat-path", script, "--output-exe-path", output)
     assert first.returncode == 0, first.stderr
     assert output.exists()
 
     second = cli_runner(
-        "build",
         "--input-bat-path",
         script,
         "--output-exe-path",
@@ -317,7 +311,7 @@ def test_cli_defaults_output_path_and_overwrites_existing_file(
     default_output = test_dir / "default_output.exe"
     default_output.write_text("stale exe placeholder", encoding="utf-8")
 
-    build = cli_runner("build", "--input-bat-path", script)
+    build = cli_runner("--input-bat-path", script)
 
     assert build.returncode == 0, build.stderr
     payload = json.loads(build.stdout)
@@ -340,14 +334,13 @@ def test_cli_rejects_invalid_inputs(
     script.write_text("not a batch file", encoding="utf-8")
     output = test_dir / "bad.exe"
 
-    bad_script = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
+    bad_script = cli_runner("--input-bat-path", script, "--output-exe-path", output)
     assert bad_script.returncode == 1
     assert "input must end with .bat or .cmd" in bad_script.stderr
 
     empty_script = test_dir / "empty.bat"
     empty_script.write_bytes(b"")
     empty_result = cli_runner(
-        "build",
         "--input-bat-path",
         empty_script,
         "--output-exe-path",
@@ -361,7 +354,6 @@ def test_cli_rejects_invalid_inputs(
     bad_icon = test_dir / "icon.txt"
     bad_icon.write_text("not an icon", encoding="utf-8")
     bad_icon_result = cli_runner(
-        "build",
         "--input-bat-path",
         real_script,
         "--output-exe-path",
@@ -373,7 +365,6 @@ def test_cli_rejects_invalid_inputs(
     assert "only .ico icon files are supported" in bad_icon_result.stderr
 
     invalid_version = cli_runner(
-        "build",
         "--input-bat-path",
         real_script,
         "--output-exe-path",
@@ -422,7 +413,7 @@ def test_cli_records_supported_encodings(cli_runner, test_dir: Path) -> None:
         script = test_dir / file_name
         script.write_bytes(script_bytes)
         output = test_dir / f"{script.stem}.exe"
-        build = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
+        build = cli_runner("--input-bat-path", script, "--output-exe-path", output)
         assert build.returncode == 0, build.stderr
         payload = json.loads(build.stdout)
         assert payload["script_encoding"] == expected
@@ -433,7 +424,7 @@ def test_cli_rejects_unsupported_encoding(cli_runner, test_dir: Path) -> None:
     script.write_bytes(b"@\x00e\x00c\x00h\x00o\x00")
     output = test_dir / "unsupported.exe"
 
-    completed = cli_runner("build", "--input-bat-path", script, "--output-exe-path", output)
+    completed = cli_runner("--input-bat-path", script, "--output-exe-path", output)
 
     assert completed.returncode == 1
     assert "unsupported script encoding" in completed.stderr
