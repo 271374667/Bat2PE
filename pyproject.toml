@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "bat2pe"
-version = "1.4.9"
+version = "1.5.5"
 description = "Windows Bat/Cmd to Exe converter with Rust CLI and Python API."
 readme = "README.md"
 requires-python = ">=3.10"
