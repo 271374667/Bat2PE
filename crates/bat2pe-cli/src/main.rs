@@ -41,13 +41,19 @@ fn real_main() -> Result<i32> {
     }
 
     // --help / -h anywhere takes highest priority.
-    if args.iter().any(|a| matches!(a.to_string_lossy().as_ref(), "-h" | "--help")) {
+    if args
+        .iter()
+        .any(|a| matches!(a.to_string_lossy().as_ref(), "-h" | "--help"))
+    {
         print_root_help();
         return Ok(0);
     }
 
     // --version / -V
-    if args.iter().any(|a| matches!(a.to_string_lossy().as_ref(), "-V" | "--version")) {
+    if args
+        .iter()
+        .any(|a| matches!(a.to_string_lossy().as_ref(), "-V" | "--version"))
+    {
         print_version();
         return Ok(0);
     }
@@ -228,7 +234,8 @@ Options:
       Output executable path. If omitted, bat2pe writes <script-stem>.exe beside
       the input script and overwrites any existing file at that path.
   --icon-path, --icon PATH
-      Optional .ico file to embed into the generated executable.
+      Optional custom .ico file to embed into the generated executable.
+      When omitted, Bat2PE embeds its built-in default icon.
   --company TEXT
       CompanyName field written into the Windows version resource.
   --product TEXT

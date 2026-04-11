@@ -97,7 +97,8 @@ class Builder:
                 omitted, the native builder decides the final output location.
             visible: Whether the generated executable should show a console
                 window when launched. Defaults to ``False`` (hidden window).
-            icon_path: Optional path to an `.ico` file embedded into the executable.
+            icon_path: Optional custom `.ico` file embedded into the executable.
+                When omitted, Bat2PE embeds its built-in default icon.
             company_name: Optional company name written into version metadata.
             product_name: Optional product name written into version metadata.
             description: Optional file description written into version
@@ -199,7 +200,8 @@ def build(
             omitted, the native builder chooses the destination path.
         visible: Whether the generated executable should show a console window
             when launched. Defaults to ``False`` (hidden window).
-        icon_path: Optional path to an `.ico` file embedded into the executable.
+        icon_path: Optional custom `.ico` file embedded into the executable.
+            When omitted, Bat2PE embeds its built-in default icon.
         company_name: Optional company name written into version metadata.
         product_name: Optional product name written into version metadata.
         description: Optional file description written into version metadata.

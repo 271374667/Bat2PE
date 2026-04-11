@@ -121,7 +121,7 @@ builder = Builder(
     input_bat_path="run.bat",
     output_exe_path="dist/run.exe",
     # visible defaults to False (hidden); set True for console window
-    icon_path="app.ico",
+    icon_path="app.ico",  # 会覆盖内置默认图标
     company_name="Acme Corp",
     product_name="My Tool",
     file_version="1.2.3",

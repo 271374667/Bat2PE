@@ -177,6 +177,10 @@ def test_cli_help_smoke(cli_runner) -> None:
     assert version.stdout.startswith("bat2pe ")
 
 
+def test_cli_executable_has_built_in_app_icon(build_artifacts) -> None:
+    assert _extract_icon_count(build_artifacts.cli_exe) > 0
+
+
 def test_cli_help_priority(cli_runner, test_dir: Path) -> None:
     # --help takes priority regardless of position
     script = test_dir / "help_priority.bat"
@@ -302,6 +306,27 @@ def test_cli_supports_overwrite_and_quiet_mode(cli_runner, test_dir: Path) -> No
     assert output.exists()
 
 
+def test_cli_uses_embedded_default_icon_when_icon_path_is_omitted(
+    cli_runner,
+    test_dir: Path,
+) -> None:
+    script = test_dir / "default_icon.bat"
+    script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
+    output = test_dir / "default_icon.exe"
+
+    build = cli_runner("--input-bat-path", script, "--output-exe-path", output)
+
+    assert build.returncode == 0, build.stderr
+    payload = json.loads(build.stdout)
+    assert payload["inspect"]["icon"]["file_name"] == "MaterialSymbolsSdkOutlineRounded.ico"
+    assert (
+        payload["inspect"]["icon"]["source_path"]
+        == "embedded/MaterialSymbolsSdkOutlineRounded.ico"
+    )
+    assert payload["inspect"]["icon"]["size"] > 0
+    assert _extract_icon_count(output) > 0
+
+
 def test_cli_defaults_output_path_and_overwrites_existing_file(
     cli_runner,
     test_dir: Path,
@@ -319,10 +344,12 @@ def test_cli_defaults_output_path_and_overwrites_existing_file(
     assert default_output.exists()
     assert payload["inspect"]["source_script_name"] == "default_output.cmd"
     assert payload["inspect"]["runtime"]["uac"] is False
+    assert payload["inspect"]["icon"]["file_name"] == "MaterialSymbolsSdkOutlineRounded.ico"
     assert payload["inspect"]["version_info"]["original_filename"] == "default_output.exe"
     assert payload["inspect"]["version_info"]["internal_name"] == "default_output"
     assert _read_version_string(default_output, "OriginalFilename") == "default_output.exe"
     assert _read_version_string(default_output, "InternalName") == "default_output"
+    assert _extract_icon_count(default_output) > 0
     assert _extract_execution_level(default_output) == "asInvoker"
 
 

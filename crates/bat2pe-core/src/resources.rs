@@ -24,6 +24,9 @@ const PE_SIGNATURE: u32 = 0x0000_4550;
 const PE_SUBSYSTEM_OFFSET: u64 = 68;
 const IMAGE_SUBSYSTEM_WINDOWS_GUI: u16 = 2;
 const IMAGE_SUBSYSTEM_WINDOWS_CUI: u16 = 3;
+const DEFAULT_ICON_BYTES: &[u8] = include_bytes!("../assets/default-icon.ico");
+pub const DEFAULT_ICON_FILE_NAME: &str = "MaterialSymbolsSdkOutlineRounded.ico";
+pub const DEFAULT_ICON_SOURCE_PATH: &str = "embedded/MaterialSymbolsSdkOutlineRounded.ico";
 const AS_INVOKER_MANIFEST: &str = concat!(
     "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
     "<assembly xmlns=\"urn:schemas-microsoft-com:asm.v1\" manifestVersion=\"1.0\">",
@@ -61,8 +64,19 @@ struct ParsedIcoFile {
 
 pub fn apply_icon_resource(executable_path: &Path, icon_path: &Path) -> Result<()> {
     let icon_bytes = fs::read(icon_path).map_err(|error| Bat2PeError::io(icon_path, &error))?;
-    let parsed = ParsedIcoFile::parse(icon_path, &icon_bytes)?;
-    apply_icon_resource_from_parsed(executable_path, &parsed)
+    apply_icon_resource_bytes(executable_path, icon_path, &icon_bytes)
+}
+
+pub fn apply_default_icon_resource(executable_path: &Path) -> Result<()> {
+    apply_icon_resource_bytes(
+        executable_path,
+        Path::new(DEFAULT_ICON_SOURCE_PATH),
+        DEFAULT_ICON_BYTES,
+    )
+}
+
+pub fn default_icon_size() -> u64 {
+    DEFAULT_ICON_BYTES.len() as u64
 }
 
 pub fn apply_execution_level_manifest(executable_path: &Path, uac: bool) -> Result<()> {
@@ -203,6 +217,15 @@ impl ParsedIcoFile {
 
         Ok(bytes)
     }
+}
+
+fn apply_icon_resource_bytes(
+    executable_path: &Path,
+    icon_path: &Path,
+    icon_bytes: &[u8],
+) -> Result<()> {
+    let parsed = ParsedIcoFile::parse(icon_path, icon_bytes)?;
+    apply_icon_resource_from_parsed(executable_path, &parsed)
 }
 
 fn invalid_icon(icon_path: &Path, message: impl Into<String>) -> Bat2PeError {

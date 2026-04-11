@@ -532,10 +532,40 @@ def test_python_builder_defaults_output_path(
 
     assert result.output_exe_path == default_output
     assert default_output.exists()
+    assert result.inspect.icon is not None
+    assert result.inspect.icon.file_name == "MaterialSymbolsSdkOutlineRounded.ico"
+    assert (
+        result.inspect.icon.source_path.as_posix()
+        == "embedded/MaterialSymbolsSdkOutlineRounded.ico"
+    )
     assert result.inspect.version_info.original_filename == "builder_default_output.exe"
     assert result.inspect.version_info.internal_name == "builder_default_output"
     assert _read_version_string(default_output, "OriginalFilename") == "builder_default_output.exe"
     assert _read_version_string(default_output, "InternalName") == "builder_default_output"
+    assert _extract_icon_count(default_output) > 0
+
+
+def test_python_builder_uses_embedded_default_icon_when_icon_path_is_omitted(
+    bat2pe_module,
+    test_dir: Path,
+) -> None:
+    script = test_dir / "python_default_icon.bat"
+    script.write_bytes(b"@echo off\r\nexit /b 0\r\n")
+    output = test_dir / "python_default_icon.exe"
+
+    result = bat2pe_module.build(
+        input_bat_path=script,
+        output_exe_path=output,
+    )
+
+    assert result.inspect.icon is not None
+    assert result.inspect.icon.file_name == "MaterialSymbolsSdkOutlineRounded.ico"
+    assert (
+        result.inspect.icon.source_path.as_posix()
+        == "embedded/MaterialSymbolsSdkOutlineRounded.ico"
+    )
+    assert result.inspect.icon.size > 0
+    assert _extract_icon_count(output) > 0
 
 
 def test_python_builder_creates_missing_output_parent_directory(

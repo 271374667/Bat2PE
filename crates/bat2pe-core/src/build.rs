@@ -13,8 +13,9 @@ use crate::model::{
 };
 use crate::overlay::write_payload_resources;
 use crate::resources::{
+    DEFAULT_ICON_FILE_NAME, DEFAULT_ICON_SOURCE_PATH, apply_default_icon_resource,
     apply_executable_subsystem, apply_execution_level_manifest, apply_icon_resource,
-    apply_version_resource,
+    apply_version_resource, default_icon_size,
 };
 
 const OVERLAY_SCHEMA_VERSION: u32 = 1;
@@ -116,7 +117,8 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
         .icon_path
         .as_deref()
         .map(load_icon_info)
-        .transpose()?;
+        .transpose()?
+        .unwrap_or_else(default_icon_info);
 
     write_template_executable(&request.template_executable, &output_exe_path)?;
 
@@ -125,6 +127,8 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
     apply_version_resource(&output_exe_path, &version_info)?;
     if let Some(icon_path) = request.icon_path.as_deref() {
         apply_icon_resource(&output_exe_path, icon_path)?;
+    } else {
+        apply_default_icon_resource(&output_exe_path)?;
     }
 
     let metadata = EmbeddedMetadata {
@@ -143,7 +147,7 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
             strict_dp0: true,
             uac: request.uac,
         },
-        icon,
+        icon: Some(icon),
         version_info: version_info.clone(),
     };
 
@@ -159,6 +163,14 @@ pub fn build_executable(request: &BuildRequest) -> Result<BuildResult> {
         uac: request.uac,
         inspect,
     })
+}
+
+fn default_icon_info() -> IconInfo {
+    IconInfo {
+        file_name: DEFAULT_ICON_FILE_NAME.to_string(),
+        source_path: DEFAULT_ICON_SOURCE_PATH.to_string(),
+        size: default_icon_size(),
+    }
 }
 
 fn resolved_version_info(
