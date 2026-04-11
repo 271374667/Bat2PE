@@ -12,7 +12,7 @@ authors = ["Bat2PE Contributors"]
 edition = "2024"
 license = "MPL-2.0"
 rust-version = "1.85"
-version = "0.1.0"
+version = "1.7.3"
 
 [workspace.dependencies]
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py310"] }
